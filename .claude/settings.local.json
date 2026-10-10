@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp /root/.claude/uploads/eb443ef1-98aa-5f6e-a7e5-9f34d016205b/c7e90bbd-Uninstall.lnk Uninstall.lnk)",
+      "Bash(cp /root/.claude/uploads/eb443ef1-98aa-5f6e-a7e5-9f34d016205b/06bc3fe5-LOVE.lnk LOVE.lnk)",
+      "Bash(cp /root/.claude/uploads/eb443ef1-98aa-5f6e-a7e5-9f34d016205b/32db8620-Documentation.url Documentation.url)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'Add LÖVE shortcuts \\(Uninstall, LOVE, Documentation\\) *)"
+    ]
+  }
+}
