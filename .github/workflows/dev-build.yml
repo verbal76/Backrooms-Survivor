@@ -78,8 +78,16 @@ jobs:
         continue-on-error: true
         working-directory: godot
         run: |
-          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          [ -z "$SDK" ] && SDK=$(ls -d /usr/lib/android-sdk /usr/local/lib/android/sdk /opt/android-sdk 2>/dev/null | head -1)
+          # Godot 4.3 needs cmdline-tools, platform-tools, build-tools 34.0.0 and platform android-34.
+          # The image's bundled SDK is incomplete, so install a fresh one.
+          SDK="$HOME/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+          curl -sSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
+          mv /tmp/cmdtools/cmdline-tools "$SDK/cmdline-tools/latest"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --licenses > /dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" "platform-tools" "build-tools;34.0.0" "platforms;android-34" "cmdline-tools;latest"
+          ls "$SDK" "$SDK/build-tools" "$SDK/platforms"
           JH="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(which javac)")")")}"
           echo "Android SDK: $SDK   JDK: $JH"
           keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
