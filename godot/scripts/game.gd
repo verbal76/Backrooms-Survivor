@@ -1,64 +1,73 @@
 extends Node2D
-## Placeholder game scene: a dark room with a headlamp light and shadow-casting walls.
-## It proves the lighting setup and the OTA patch flow. The real game gets ported
-## into this scene tree (and everything under res://scenes + res://scripts is patchable).
+## Core loop: infinite map, player, camera, headlamp. Everything under res://scenes and
+## res://scripts is patchable over the air in dev builds.
 
 const Patcher = preload("res://scripts/patcher.gd")
-const TILE := 32
-const ROOM := Rect2(0, 0, 960, 720)
+const TILE := 52
 
-var _lamp: PointLight2D
-var _walls: Array[Rect2] = [
-	Rect2(160, 128, 224, 32),
-	Rect2(544, 256, 32, 288),
-	Rect2(224, 480, 256, 32),
-]
+var map: WorldMap
+var player: Player
+var camera: Camera2D
+var _views := {}
+var _hud: Label
 
 
 func _ready() -> void:
+	map = WorldMap.new()
+	map.ensure_chunk(0, 0)
+
 	var dark := CanvasModulate.new()
-	dark.color = Color(0.05, 0.05, 0.07)
+	dark.color = Color(0.035, 0.035, 0.05)
 	add_child(dark)
 
-	_lamp = PointLight2D.new()
-	_lamp.texture = _radial_texture()
-	_lamp.texture_scale = 2.2
-	_lamp.energy = 1.4
-	_lamp.color = Color(1.0, 0.92, 0.7)
-	_lamp.shadow_enabled = true
-	_lamp.position = ROOM.size / 2.0
-	add_child(_lamp)
+	player = Player.new()
+	player.map = map
+	player.tile_pos = map.find_spawn()
+	player.position = player.tile_pos * TILE
+	add_child(player)
 
-	for wall in _walls:
-		var occluder := LightOccluder2D.new()
-		var poly := OccluderPolygon2D.new()
-		poly.polygon = PackedVector2Array([
-			wall.position, Vector2(wall.end.x, wall.position.y),
-			wall.end, Vector2(wall.position.x, wall.end.y)])
-		occluder.occluder = poly
-		add_child(occluder)
+	player.lamp = PointLight2D.new()
+	player.lamp.texture = _radial_texture()
+	player.lamp.texture_scale = 3.2
+	player.lamp.energy = 1.5
+	player.lamp.color = Color(1.0, 0.92, 0.7)
+	player.lamp.shadow_enabled = true
+	player.add_child(player.lamp)
 
-	var label := Label.new()
-	label.position = Vector2(12, 8)
-	label.text = "BACKROOMS SURVIVOR - Godot port (pipeline demo)\nbuild %s  %s" % [
-		Patcher.read_info().get("build", 0), Patcher.read_info().get("sha", "")]
+	camera = Camera2D.new()
+	camera.position_smoothing_enabled = true
+	camera.position_smoothing_speed = 12.0
+	player.add_child(camera)
+
 	var layer := CanvasLayer.new()  # HUD ignores the darkening CanvasModulate
-	layer.add_child(label)
+	_hud = Label.new()
+	_hud.position = Vector2(12, 8)
+	layer.add_child(_hud)
 	add_child(layer)
+	_stream_chunks()
 
 
-func _process(_delta: float) -> void:
-	# Mouse on desktop; touch is emulated as mouse on Android.
-	_lamp.global_position = get_global_mouse_position()
+func _physics_process(delta: float) -> void:
+	var dir := Vector2(
+		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
+		- float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
+		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))
+		- float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
+	var sprint := Input.is_physical_key_pressed(KEY_SHIFT)
+	player.step(delta, dir, sprint, get_global_mouse_position())
+	_stream_chunks()
+	_hud.text = "BACKROOMS SURVIVOR  build %s  %s\nHP %d   STA %d" % [
+		Patcher.read_info().get("build", 0), Patcher.read_info().get("sha", ""),
+		int(player.hp), int(player.stamina)]
 
 
-func _draw() -> void:
-	for y in range(0, int(ROOM.size.y), TILE):
-		for x in range(0, int(ROOM.size.x), TILE):
-			var shade := 0.34 if ((x / TILE + y / TILE) % 2 == 0) else 0.30
-			draw_rect(Rect2(x, y, TILE, TILE), Color(shade, shade * 0.93, shade * 0.62))
-	for wall in _walls:
-		draw_rect(wall, Color(0.45, 0.42, 0.36))
+func _stream_chunks() -> void:
+	map.ensure_around(player.tile_pos, 32)
+	for c in map.drain_new_chunks():
+		var view := ChunkView.new()
+		add_child(view)
+		view.setup(map, c.x, c.y)
+		_views[c] = view
 
 
 func _radial_texture() -> GradientTexture2D:

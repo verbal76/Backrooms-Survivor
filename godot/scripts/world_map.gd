@@ -11,6 +11,7 @@ const VOID := 2
 var chunks := {}          # Vector2i -> PackedByteArray (CHUNK*CHUNK)
 var chest_rooms := []     # {pos: Vector2, looted: bool}
 var seed_base := 0
+var new_chunks: Array[Vector2i] = []   # queue of freshly generated chunks (views, item spawns)
 
 
 func _init(p_seed: int = -1) -> void:
@@ -36,16 +37,19 @@ func _chunk_seed(cx: int, cy: int) -> int:
 	return seed_base + cx * 73856093 + cy * 19349669
 
 
-func ensure_around(tile: Vector2, radius_tiles: int = 32) -> Array[Vector2i]:
-	var created: Array[Vector2i] = []
+func ensure_around(tile: Vector2, radius_tiles: int = 32) -> void:
 	var cx := floori(tile.x / CHUNK)
 	var cy := floori(tile.y / CHUNK)
 	var rc := maxi(1, ceili(float(radius_tiles) / CHUNK) + 1)
 	for yy in range(cy - rc, cy + rc + 1):
 		for xx in range(cx - rc, cx + rc + 1):
-			if ensure_chunk(xx, yy):
-				created.append(Vector2i(xx, yy))
-	return created
+			ensure_chunk(xx, yy)
+
+
+func drain_new_chunks() -> Array[Vector2i]:
+	var list := new_chunks
+	new_chunks = []
+	return list
 
 
 func ensure_chunk(cx: int, cy: int) -> bool:
@@ -53,6 +57,7 @@ func ensure_chunk(cx: int, cy: int) -> bool:
 	if chunks.has(key):
 		return false
 	chunks[key] = _generate(cx, cy)
+	new_chunks.append(key)
 	return true
 
 
