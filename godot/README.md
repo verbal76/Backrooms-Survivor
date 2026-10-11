@@ -41,3 +41,6 @@ skip it on a dev build.
 The Windows export and Android export steps in CI haven't run yet. The patch export, loading and
 SHA check were tested locally with Godot 4.3. Expect a round or two of fixes on the first CI run,
 most likely in the Android SDK/JDK paths inside the `barichello/godot-ci` container.
+
+## Test builds
+Rolling dev builds (Windows zip, Android APK) are on the repo's `dev` release.

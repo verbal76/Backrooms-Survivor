@@ -1,131 +1,179 @@
 extends Node2D
-## Core loop: infinite map, player, camera, headlamp. Everything under res://scenes and
-## res://scripts is patchable over the air in dev builds.
+## Game root. Owns the world, player, run state, and loads the pluggable systems.
+## See godot/ARCHITECTURE.md for the contract every system follows.
 
 const Patcher = preload("res://scripts/patcher.gd")
 const TILE := 52
+const DAY_SECONDS := 300.0   # 5 minutes = 1 day
+
+## Systems are optional scripts at these paths. If a file exists it is instanced, given
+## `setup(game)`, and ticked while state == "playing". Later entries tick later.
+const SYSTEM_PATHS := {
+	"input": "res://scripts/systems/input.gd",
+	"audio": "res://scripts/systems/audio.gd",
+	"fx": "res://scripts/systems/fx.gd",
+	"lighting": "res://scripts/systems/lighting.gd",
+	"weapons": "res://scripts/systems/weapons.gd",
+	"enemies": "res://scripts/systems/enemies.gd",
+	"objects": "res://scripts/systems/objects.gd",
+	"ui": "res://scripts/systems/ui.gd",
+}
+const SYSTEM_ORDER := ["input", "audio", "fx", "lighting", "weapons", "enemies", "objects", "ui"]
+
+signal state_changed(new_state: String)
+signal enemy_killed(tile_pos: Vector2, kind: String, xp: int)
+signal player_died
+signal chunk_spawned(cx: int, cy: int)
 
 var map: WorldMap
 var player: Player
 var camera: Camera2D
+var world: Node2D            # parent for all lit world entities (enemies, items, bullets...)
+var input: GameInput
+var audio: Node = NullAudio.new()
+var fx: Node = NullFx.new()
+var lighting: Node
+var weapons: Node
+var enemies: Node
+var objects: Node
+var ui: Node
+var systems: Array[Node] = []
+
+## "title" | "playing" | "paused" | "perk" | "dead" | "portal"
+var state := "title"
+var run_time := 0.0          # seconds survived this run (pauses with the game)
+var day := 1
+var kills := 0
 var _views := {}
-var _hud: Label
-# touch: left half of the screen = move stick, right half = aim stick
-var _touch_move := {"id": -1, "origin": Vector2.ZERO, "pos": Vector2.ZERO}
-var _touch_aim := {"id": -1, "origin": Vector2.ZERO, "pos": Vector2.ZERO}
-var _aim_dir := Vector2.ZERO
-var _sticks: Control
-const STICK_R := 90.0
+var _hitstop := 0.0
 
 
 func _ready() -> void:
 	map = WorldMap.new()
 	map.ensure_chunk(0, 0)
 
-	var dark := CanvasModulate.new()
-	dark.color = Color(0.035, 0.035, 0.05)
-	add_child(dark)
+	world = Node2D.new()
+	add_child(world)
 
 	player = Player.new()
 	player.map = map
 	player.tile_pos = map.find_spawn()
 	player.position = player.tile_pos * TILE
-	add_child(player)
-
-	player.lamp = PointLight2D.new()
-	player.lamp.texture = _radial_texture()
-	player.lamp.texture_scale = 3.2
-	player.lamp.energy = 1.5
-	player.lamp.color = Color(1.0, 0.92, 0.7)
-	player.lamp.shadow_enabled = true
-	player.add_child(player.lamp)
+	world.add_child(player)
+	player.died.connect(_on_player_died)
 
 	camera = Camera2D.new()
 	camera.position_smoothing_enabled = true
 	camera.position_smoothing_speed = 12.0
 	player.add_child(camera)
 
-	var layer := CanvasLayer.new()  # HUD ignores the darkening CanvasModulate
-	_hud = Label.new()
-	_hud.position = Vector2(12, 8)
-	layer.add_child(_hud)
-	_sticks = Control.new()
-	_sticks.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_sticks.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_sticks.draw.connect(_draw_sticks)
-	layer.add_child(_sticks)
-	add_child(layer)
+	for key in SYSTEM_ORDER:
+		var path: String = SYSTEM_PATHS[key]
+		if not ResourceLoader.exists(path):
+			continue
+		var node: Node = load(path).new()
+		node.name = key.capitalize()
+		add_child(node)
+		set(key, node)
+		systems.append(node)
+	for node in systems:
+		if node.has_method("setup"):
+			node.setup(self)
+
+	if ui == null:        # no menu system yet: start straight away
+		set_state("playing")
 	_stream_chunks()
 
 
 func _physics_process(delta: float) -> void:
-	var dir := Vector2(
-		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
-		- float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
-		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))
-		- float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
-	var sprint := Input.is_physical_key_pressed(KEY_SHIFT)
-	var aim := get_global_mouse_position()
-	if _touch_move.id >= 0:
-		var v: Vector2 = (_touch_move.pos - _touch_move.origin) / STICK_R
-		dir = v.limit_length(1.0)
-		sprint = v.length() > 1.0
-	if _touch_aim.id >= 0:
-		var a: Vector2 = _touch_aim.pos - _touch_aim.origin
-		if a.length() > 12.0:
-			_aim_dir = a.normalized()
-	if _touch_aim.id >= 0 or _aim_dir != Vector2.ZERO and _touch_move.id >= 0:
-		aim = player.position + _aim_dir * 200.0
-	player.step(delta, dir, sprint, aim)
-	_stream_chunks()
-	_hud.text = "BACKROOMS SURVIVOR  build %s  %s\nHP %d   STA %d" % [
-		Patcher.read_info().get("build", 0), Patcher.read_info().get("sha", ""),
-		int(player.hp), int(player.stamina)]
+	if _hitstop > 0.0:
+		_hitstop -= delta
+		return
+	if input:
+		input.tick(delta)
+	# non-playing states are driven by the ui system (menus, pause, perk pick, death)
+	if state == "playing":
+		run_time += delta
+		day = 1 + int(run_time / DAY_SECONDS)
+		var light: float = lighting.light_level_at_player() if lighting and lighting.has_method("light_level_at_player") else 0.3
+		var in_aim := input.aim_world if input else get_global_mouse_position()
+		player.step(delta, input.move if input else Vector2.ZERO, input.sprint if input else false,
+			in_aim, input.fire if input else false, light)
+		_stream_chunks()
+		for node in systems:
+			if node != input and node.has_method("tick"):
+				node.tick(delta)
+	elif ui and ui.has_method("tick_menu"):
+		ui.tick_menu(delta)
+	if input:
+		input.end_frame()
+
+
+func set_state(s: String) -> void:
+	if s == state:
+		return
+	state = s
+	state_changed.emit(s)
+
+
+## Start (or restart) a run. Systems implement reset_run() to clear their entities.
+func start_run() -> void:
+	run_time = 0.0
+	day = 1
+	kills = 0
+	var fresh := Player.new()
+	for prop in ["hp", "max_hp", "stamina", "max_stamina", "sanity", "max_sanity", "hydration", "max_hydration",
+			"speed_mult", "dmg_mult", "dmg_taken_mult", "invuln_time_mult", "invuln_time", "noise", "xp", "level",
+			"xp_need", "almond_water", "bandages", "food", "batteries", "headlamp_on", "current_streak",
+			"best_run_streak", "pending_perk_choice", "active_run_perks"]:
+		player.set(prop, fresh.get(prop))
+	fresh.free()
+	player.vel = Vector2.ZERO
+	player.tile_pos = map.find_spawn()
+	for node in systems:
+		if node.has_method("reset_run"):
+			node.reset_run()
+	set_state("playing")
+
+
+# ---- API used by systems -------------------------------------------------
+
+## Damage the player. from_px is the world-pixel position of the attacker (for knockback/juice).
+func damage_player(amount: float, from_px := Vector2.ZERO) -> bool:
+	var died := player.take_damage(amount)
+	if player.dmg_flash > 0.0 and player.invuln_time > 0.0:
+		fx.shake(8.0, 0.25)
+		fx.flash(Color(0.8, 0.0, 0.0, 0.35), 0.2)
+		fx.blood(player.position, 0.6)
+	return died
+
+
+## Systems call this when an enemy dies; it grants XP/streak and notifies listeners (item drops, UI).
+func report_kill(tile_pos: Vector2, kind: String, xp: int) -> void:
+	kills += 1
+	player.record_kill()
+	if player.add_xp(xp):
+		fx.float_text(player.position + Vector2(0, -70), "LEVEL UP!", Color(1.0, 0.85, 0.2))
+		if player.pending_perk_choice:
+			set_state("perk")
+	enemy_killed.emit(tile_pos, kind, xp)
+
+
+func hitstop(seconds: float) -> void:
+	_hitstop = maxf(_hitstop, seconds)
+
+
+func _on_player_died() -> void:
+	player_died.emit()
+	set_state("dead")
 
 
 func _stream_chunks() -> void:
 	map.ensure_around(player.tile_pos, 32)
 	for c in map.drain_new_chunks():
 		var view := ChunkView.new()
-		add_child(view)
+		world.add_child(view)
+		world.move_child(view, 0)
 		view.setup(map, c.x, c.y)
+		chunk_spawned.emit(c.x, c.y)
 		_views[c] = view
-
-
-func _radial_texture() -> GradientTexture2D:
-	var gradient := Gradient.new()
-	gradient.colors = PackedColorArray([Color.WHITE, Color.BLACK])
-	gradient.offsets = PackedFloat32Array([0.0, 1.0])
-	var tex := GradientTexture2D.new()
-	tex.gradient = gradient
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5, 0.5)
-	tex.fill_to = Vector2(1.0, 0.5)
-	tex.width = 256
-	tex.height = 256
-	return tex
-
-
-func _input(event: InputEvent) -> void:
-	var half := get_viewport().get_visible_rect().size.x / 2.0
-	if event is InputEventScreenTouch:
-		var stick: Dictionary = _touch_move if event.position.x < half else _touch_aim
-		if event.pressed and stick.id < 0:
-			stick.id = event.index
-			stick.origin = event.position
-			stick.pos = event.position
-		elif not event.pressed and stick.id == event.index:
-			stick.id = -1
-		_sticks.queue_redraw()
-	elif event is InputEventScreenDrag:
-		for stick in [_touch_move, _touch_aim]:
-			if stick.id == event.index:
-				stick.pos = event.position
-		_sticks.queue_redraw()
-
-
-func _draw_sticks() -> void:
-	for stick in [_touch_move, _touch_aim]:
-		if stick.id >= 0:
-			_sticks.draw_arc(stick.origin, STICK_R, 0.0, TAU, 40, Color(1, 1, 1, 0.35), 3.0)
-			_sticks.draw_circle(stick.origin + (stick.pos - stick.origin).limit_length(STICK_R), 34.0, Color(1, 1, 1, 0.35))
