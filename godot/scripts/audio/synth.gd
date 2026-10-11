@@ -11,6 +11,7 @@ const NAMES := {
 	"fx_thud": 3, "fx_bone": 2, "fx_slash": 3, "fx_crunch": 3, "fx_ping": 3, "fx_tink": 2,
 	"fx_boom": 1, "fx_level": 1, "fx_streak": 1, "fx_pickup": 2, "fx_thump": 2, "fx_warn": 1,
 	"fx_miss": 2, "fx_hurt": 2, "fx_zap": 1, "fx_wet": 2,
+	"fx_caw": 3, "fx_flap": 2,
 }
 
 static var _cache := {}
@@ -55,6 +56,8 @@ static func make(key: String) -> AudioStream:
 		"fx_hurt":   d = _hurt(rng, pv)
 		"fx_zap":    d = _zap(rng)
 		"fx_wet":    d = _wet(rng, pv)
+		"fx_caw":    d = _caw(rng, pv)
+		"fx_flap":   d = _flap(rng, pv)
 		_:           d = PackedFloat32Array([0.0])
 	var s := _to_wav(d)
 	_cache[key] = s
@@ -250,4 +253,37 @@ static func _wet(rng: RandomNumberGenerator, pv: float) -> PackedFloat32Array:
 		var t := float(i) / n
 		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.2
 		a[i] = (lp * 1.5 + sin(TAU * (160.0 + 380.0 * t) * pv * i / RATE) * 0.3) * exp(-t * 9.0) * 0.8
+	return a
+
+
+## Crow caw: raspy descending buzz (sawtooth through a vocal-ish low-pass, 60 Hz amplitude roughness), 1-2 syllables.
+static func _caw(rng: RandomNumberGenerator, pv: float) -> PackedFloat32Array:
+	var a := _buf(0.36)
+	var n := a.size()
+	var ph := 0.0
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in n:
+		var t := float(i) / n
+		var syl := fposmod(t * 1.8, 1.0)                       # two syllables
+		var env := sin(clampf(syl * 1.15, 0.0, 1.0) * PI) * (1.0 - t * 0.35)
+		var f := lerpf(720.0, 430.0, syl) * pv
+		ph += f / RATE
+		var saw := 2.0 * fposmod(ph, 1.0) - 1.0
+		lp += (saw - lp) * 0.32
+		lp2 += (lp - lp2) * 0.5
+		var rough := 0.65 + 0.35 * sin(TAU * 62.0 * i / RATE)
+		a[i] = (lp2 * 1.5 + rng.randf_range(-1.0, 1.0) * 0.12) * env * rough
+	return a
+
+
+## One wing beat: short low noise whump.
+static func _flap(rng: RandomNumberGenerator, pv: float) -> PackedFloat32Array:
+	var a := _buf(0.13)
+	var n := a.size()
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / n
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.12 * pv
+		a[i] = lp * 2.2 * sin(t * PI) * exp(-t * 3.0) * 0.6
 	return a

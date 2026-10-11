@@ -42,6 +42,7 @@ const PAGES := [
 		"- Hound: fast, 15 HP, 12 dmg.   Wretch: fastest, 10 HP, only 5 dmg but comes in packs.",
 		"- Shade: 20 HP, 18 dmg, terrified of light.   Crawler: very slow, 50 HP, 20 dmg, long reach.",
 		"- Skin Stealer: 80 HP, 35 dmg, ignores light. Fight it with distance and burst damage.",
+		"- Crow (from day 2): flocks of 2 to 4, 8 HP, 6 dmg. They circle you, then one caws, flares its wings and DIVES in a straight line - sidestep the dive. Light does not scare them; they fly over props, not through walls.",
 		"- Enemies get tougher with the difficulty you picked and the more days you survive. Kills give XP and sometimes drop items.",
 	]},
 	{"title": "LIGHT & BATTERY", "lines": [

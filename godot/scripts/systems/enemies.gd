@@ -13,6 +13,7 @@ const TYPES := {
 	"wretch":       {"idx": 2, "reach": 0.75, "windup": 0.16, "recover": 0.6, "hp": 10, "speed": 4.0, "dmg": 5,  "radius": 0.25, "scale": 0.65, "color": Color(0.95, 0.85, 0.2),  "xp": 1, "drop": 0.08, "noise": 2.0, "fear": 0.6},
 	"shade":        {"idx": 3, "reach": 1.0, "windup": 0.3, "recover": 0.8, "hp": 20, "speed": 2.0, "dmg": 18, "radius": 0.3,  "scale": 0.7,  "color": Color(0.35, 0.15, 0.55), "xp": 3, "drop": 0.15, "noise": 1.0, "fear": 1.0},
 	"skin stealer": {"idx": 4, "reach": 1.6, "windup": 0.45, "recover": 1.0, "hp": 80, "speed": 1.5, "dmg": 35, "radius": 0.55, "scale": 1.25, "color": Color(0.9, 0.4, 0.15),   "xp": 8, "drop": 0.3,  "noise": 1.5, "fear": 0.0},
+	"crow":         {"idx": 5, "reach": 0.9, "windup": 0.6, "recover": 1.0, "hp": 8, "speed": 4.2, "dmg": 6, "radius": 0.25, "scale": 0.9, "color": Color(0.12, 0.12, 0.18), "xp": 2, "drop": 0.05, "noise": 1.5, "fear": 0.0},
 }
 const KINDS := ["hound", "crawler", "wretch", "shade", "skin stealer"]
 const SHEET_FILES := {
@@ -21,7 +22,12 @@ const SHEET_FILES := {
 	"wretch": "res://assets/enemies/enemy_wretch_spritesheet.png",
 	"shade": "res://assets/enemies/enemy_shade_spritesheet.png",
 	"skin stealer": "res://assets/enemies/enemy_skinstealer_spritesheet.png",
+	"crow": "res://assets/enemies/crow_sheet.png",
 }
+const CrowScript = preload("res://scripts/enemies/crow.gd")
+## Crows (uncommon flocks of 2-4 from day 2): chance per spawn event, and the shared dive timer (run_time).
+const CROW_MIN_DAY := 2
+var crow_dive_at := 0.0
 
 const SPAWN_RATE := 3.0            # Enemies.spawnRate
 const START_MAX := 32              # Enemies.maxEnemies
@@ -103,7 +109,7 @@ func spawn(kind, tile_pos: Vector2, hunting := false, wave := -1):
 	if not TYPES.has(name):
 		push_warning("enemies: unknown kind '%s'" % name)
 		return null
-	var e = EnemyScript.new()
+	var e = CrowScript.new() if name == "crow" else EnemyScript.new()
 	e.setup(game, self, name, TYPES[name], tile_pos, game.day if wave < 0 else wave, hp_mult, spd_mult, dmg_mult)
 	if hunting:
 		e.state = "hunt"
@@ -258,6 +264,9 @@ func _spawn_random(ppos: Vector2, wave: int) -> void:
 		return
 	for tries in 30:
 		var p := ppos + Vector2.from_angle(randf() * TAU) * (10.0 + randf() * 8.0)
+		if wave >= CROW_MIN_DAY and randf() < _crow_chance(wave) and _clear_at(p, 0.4):
+			spawn_crow_flock(p, wave)
+			return
 		var roll := randf()
 		var idx: int
 		if wave < 5:
@@ -351,3 +360,25 @@ func _headlamp_damage(dt: float, pl) -> void:
 			e.hit_flash = maxf(e.hit_flash, 0.05)
 			if e.hp <= 0.0:
 				e._die(d.normalized())
+
+
+## Chance that a spawn event is a crow flock (uncommon early, a bit more later).
+func _crow_chance(wave: int) -> float:
+	return 0.05 if wave < 5 else (0.08 if wave < 11 else 0.10)
+
+
+## A flock of 2-4 crows scattered around `center` (fewer if the enemy cap is nearly full).
+func spawn_crow_flock(center: Vector2, wave := -1, count := 0) -> int:
+	if count <= 0:
+		count = randi_range(2, 4)
+	var n := 0
+	for i in count:
+		if list.size() >= max_enemies + 4:
+			break
+		for t in 8:
+			var p := center + Vector2.from_angle(randf() * TAU) * randf_range(0.0, 1.6)
+			if _clear_at(p, 0.3):
+				spawn("crow", p, false, wave)
+				n += 1
+				break
+	return n

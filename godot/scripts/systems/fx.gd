@@ -47,6 +47,7 @@ const PAL := {
 	"wretch": {"a": Color(0.82, 0.7, 0.12), "b": Color(0.5, 0.38, 0.05), "puddle": Color(1.25, 1.0, 0.25, 0.8), "grey": true},
 	"shade": {"a": Color(0.32, 0.12, 0.5), "b": Color(0.14, 0.04, 0.25), "puddle": Color(0.7, 0.3, 1.2, 0.85), "grey": true},
 	"skin stealer": {"a": Color(0.78, 0.28, 0.1), "b": Color(0.45, 0.1, 0.05), "puddle": Color(1.3, 0.55, 0.25, 0.85), "grey": true},
+	"crow": {"a": Color(0.12, 0.12, 0.17), "b": Color(0.28, 0.28, 0.36), "puddle": Color(0.5, 0.2, 0.2, 0.5), "grey": true},
 }
 const DECAL_FADE_AFTER := 45.0
 const DECAL_FADE_TIME := 25.0
