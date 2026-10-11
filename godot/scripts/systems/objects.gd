@@ -132,7 +132,7 @@ func tick(dt: float) -> void:
 	if bomb_cooldown > 0.0:
 		bomb_cooldown -= dt
 	if game.input:
-		if game.input.just("bomb"):
+		if game.input.just("bomb") and game.weapons == null:   # weapons.gd owns bombs when present
 			use_bomb()
 		if handle_consumables:
 			_handle_consumables(p)
@@ -405,6 +405,11 @@ func _apply_item(it: WorldItem, p: Player) -> Dictionary:
 			return {"text": "Got %s%s" % [info.name, ammo_msg], "color": info.color}
 		"bomb":
 			var mx := bomb_max()
+			if game.weapons and game.weapons.get("bomb"):
+				game.weapons.bomb.max_count = mx
+				if game.weapons.add_bomb(1):
+					return {"text": "+1 Bomb! (%d/%d)" % [game.weapons.bomb.count, mx], "color": Color(1, 0.5, 0.1)}
+				return {"text": "BOMBS FULL (%d/%d)" % [mx, mx], "color": Color(0.6, 0.4, 0.2)}
 			if bomb_count < mx:
 				bomb_count += 1
 				return {"text": "+1 Bomb! (%d/%d)" % [bomb_count, mx], "color": Color(1, 0.5, 0.1)}
@@ -608,6 +613,8 @@ func roll_effect(is_buff: bool) -> Dictionary:
 		else:
 			var val := (1.2 + rng.randf() * 0.8) if want_good else (0.5 + rng.randf() * 0.3)
 			bomb_radius_mult = maxf(0.3, minf(bomb_radius_mult * val, 4.0))
+			if game.weapons and game.weapons.get("bomb"):
+				game.weapons.bomb.radius_mult = bomb_radius_mult
 			var pct := floori(val * 100.0) - 100
 			text = _pct_text("Bomb Range", pct) + "  (%ds)" % int(duration)
 			color = Color(1, 0.6, 0.2) if pct >= 0 else down
