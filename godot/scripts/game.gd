@@ -10,6 +10,12 @@ var player: Player
 var camera: Camera2D
 var _views := {}
 var _hud: Label
+# touch: left half of the screen = move stick, right half = aim stick
+var _touch_move := {"id": -1, "origin": Vector2.ZERO, "pos": Vector2.ZERO}
+var _touch_aim := {"id": -1, "origin": Vector2.ZERO, "pos": Vector2.ZERO}
+var _aim_dir := Vector2.ZERO
+var _sticks: Control
+const STICK_R := 90.0
 
 
 func _ready() -> void:
@@ -43,6 +49,11 @@ func _ready() -> void:
 	_hud = Label.new()
 	_hud.position = Vector2(12, 8)
 	layer.add_child(_hud)
+	_sticks = Control.new()
+	_sticks.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sticks.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sticks.draw.connect(_draw_sticks)
+	layer.add_child(_sticks)
 	add_child(layer)
 	_stream_chunks()
 
@@ -54,7 +65,18 @@ func _physics_process(delta: float) -> void:
 		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))
 		- float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
 	var sprint := Input.is_physical_key_pressed(KEY_SHIFT)
-	player.step(delta, dir, sprint, get_global_mouse_position())
+	var aim := get_global_mouse_position()
+	if _touch_move.id >= 0:
+		var v: Vector2 = (_touch_move.pos - _touch_move.origin) / STICK_R
+		dir = v.limit_length(1.0)
+		sprint = v.length() > 1.0
+	if _touch_aim.id >= 0:
+		var a: Vector2 = _touch_aim.pos - _touch_aim.origin
+		if a.length() > 12.0:
+			_aim_dir = a.normalized()
+	if _touch_aim.id >= 0 or _aim_dir != Vector2.ZERO and _touch_move.id >= 0:
+		aim = player.position + _aim_dir * 200.0
+	player.step(delta, dir, sprint, aim)
 	_stream_chunks()
 	_hud.text = "BACKROOMS SURVIVOR  build %s  %s\nHP %d   STA %d" % [
 		Patcher.read_info().get("build", 0), Patcher.read_info().get("sha", ""),
@@ -82,3 +104,28 @@ func _radial_texture() -> GradientTexture2D:
 	tex.width = 256
 	tex.height = 256
 	return tex
+
+
+func _input(event: InputEvent) -> void:
+	var half := get_viewport().get_visible_rect().size.x / 2.0
+	if event is InputEventScreenTouch:
+		var stick: Dictionary = _touch_move if event.position.x < half else _touch_aim
+		if event.pressed and stick.id < 0:
+			stick.id = event.index
+			stick.origin = event.position
+			stick.pos = event.position
+		elif not event.pressed and stick.id == event.index:
+			stick.id = -1
+		_sticks.queue_redraw()
+	elif event is InputEventScreenDrag:
+		for stick in [_touch_move, _touch_aim]:
+			if stick.id == event.index:
+				stick.pos = event.position
+		_sticks.queue_redraw()
+
+
+func _draw_sticks() -> void:
+	for stick in [_touch_move, _touch_aim]:
+		if stick.id >= 0:
+			_sticks.draw_arc(stick.origin, STICK_R, 0.0, TAU, 40, Color(1, 1, 1, 0.35), 3.0)
+			_sticks.draw_circle(stick.origin + (stick.pos - stick.origin).limit_length(STICK_R), 34.0, Color(1, 1, 1, 0.35))
