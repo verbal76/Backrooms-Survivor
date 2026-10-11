@@ -8,9 +8,9 @@ const Pathing = preload("res://scripts/enemies/pathing.gd")
 
 ## Enemy type table (Enemies.types). `idx` is the Lua typeIdx - 1.
 const TYPES := {
-	"hound":        {"idx": 0, "reach": 1.0, "windup": 0.22, "recover": 0.7, "hp": 15, "speed": 3.2, "dmg": 12, "radius": 0.35, "scale": 0.4,  "color": Color(0.85, 0.15, 0.1),  "xp": 2, "drop": 0.12, "noise": 2.5, "fear": 0.6},
+	"hound":        {"idx": 0, "reach": 1.0, "windup": 0.30, "recover": 0.7, "hp": 15, "speed": 3.2, "dmg": 12, "radius": 0.35, "scale": 0.4,  "color": Color(0.85, 0.15, 0.1),  "xp": 2, "drop": 0.12, "noise": 2.5, "fear": 0.6},
 	"crawler":      {"idx": 1, "reach": 1.7, "windup": 0.5, "recover": 0.9, "hp": 50, "speed": 0.9, "dmg": 20, "radius": 0.5,  "scale": 0.4,  "color": Color(0.2, 0.7, 0.15),   "xp": 4, "drop": 0.2,  "noise": 1.5, "fear": 0.2},
-	"wretch":       {"idx": 2, "reach": 0.75, "windup": 0.16, "recover": 0.6, "hp": 10, "speed": 4.0, "dmg": 5,  "radius": 0.25, "scale": 0.65, "color": Color(0.95, 0.85, 0.2),  "xp": 1, "drop": 0.08, "noise": 2.0, "fear": 0.6},
+	"wretch":       {"idx": 2, "reach": 0.75, "windup": 0.25, "recover": 0.6, "hp": 10, "speed": 4.0, "dmg": 5,  "radius": 0.25, "scale": 0.65, "color": Color(0.95, 0.85, 0.2),  "xp": 1, "drop": 0.08, "noise": 2.0, "fear": 0.6},
 	"shade":        {"idx": 3, "reach": 1.0, "windup": 0.3, "recover": 0.8, "hp": 20, "speed": 2.0, "dmg": 18, "radius": 0.3,  "scale": 0.7,  "color": Color(0.35, 0.15, 0.55), "xp": 3, "drop": 0.15, "noise": 1.0, "fear": 1.0},
 	"skin stealer": {"idx": 4, "reach": 1.6, "windup": 0.45, "recover": 1.0, "hp": 80, "speed": 1.5, "dmg": 35, "radius": 0.55, "scale": 1.25, "color": Color(0.9, 0.4, 0.15),   "xp": 8, "drop": 0.3,  "noise": 1.5, "fear": 0.0},
 	"crow":         {"idx": 5, "reach": 0.9, "windup": 0.6, "recover": 1.0, "hp": 8, "speed": 4.2, "dmg": 6, "radius": 0.25, "scale": 0.9, "color": Color(0.12, 0.12, 0.18), "xp": 2, "drop": 0.05, "noise": 1.5, "fear": 0.0},
@@ -31,7 +31,8 @@ var crow_dive_at := 0.0
 
 const SPAWN_RATE := 3.0            # Enemies.spawnRate
 const START_MAX := 32              # Enemies.maxEnemies
-const DESPAWN_DIST := 35.0         # tiles
+const CAP_RADIUS := 26.0           # BALANCE: enemies farther than this don't count against the spawn cap
+const DESPAWN_DIST := 35.0        # tiles
 const PLAYER_BODY_R := 0.3         # radius passed to checkPlayerCollision
 const HEADLAMP_RADIUS := 14.0
 const HEADLAMP_CONE := 0.85
@@ -39,11 +40,12 @@ const HEADLAMP_DPS := 1.25
 const PATH_BUDGET := 4             # BFS path searches per physics frame
 
 # Difficulty tables from main.lua startGame, index 1..4 (Easy, Normal, Getting Worse, Hell).
-const DIFF_HP := [1.0, 1.0, 1.35, 1.8]
-const DIFF_DMG := [0.70, 1.20, 1.4, 2.0]
-const DIFF_SPD := [1.0, 1.0, 1.10, 1.20]
-const DIFF_SPAWN := [1.5, 2.0, 2.5, 3.0]
-const DIFF_CAP := [90, 100, 110, 130]
+const DIFF_HP := [1.0, 1.0, 1.15, 1.2]
+const DIFF_DMG := [0.65, 0.90, 1.1, 1.15]
+const DIFF_SPD := [0.95, 1.0, 1.03, 1.08]
+const DIFF_SPAWN := [1.0, 1.3, 1.7, 2.2]
+const WAVE_BONUS := [1, 3, 3, 4]   # BALANCE (new): added to the day for spawn mix / rate / cap / hp+dmg scaling
+const DIFF_CAP := [60, 80, 100, 120]
 
 var game
 var list: Array = []               # living enemies (Enemy nodes)
@@ -216,7 +218,7 @@ func tick(dt: float) -> void:
 		return
 	_paths_left = PATH_BUDGET
 	var ppos: Vector2 = pl.tile_pos
-	var wave: int = game.day
+	var wave: int = game.day + WAVE_BONUS[difficulty_idx - 1]   # BALANCE: harder modes start further up the ramp
 
 	# spawning (main.lua): rate speeds up per day, cap grows per day
 	max_enemies = mini(diff_cap, 30 + wave * 2)
@@ -260,7 +262,13 @@ func tick(dt: float) -> void:
 
 ## Port of Enemies:spawn - random ring around the player, weights by day, clear 3x3 spot.
 func _spawn_random(ppos: Vector2, wave: int) -> void:
-	if list.size() >= max_enemies:
+	# BALANCE: the cap only counts enemies near the player. Counting far-away idle wanderers let the cap fill
+	# up with harmless monsters so nothing new spawned close by (kills/day collapsed to ~10 by day 5).
+	var near := 0
+	for e in list:
+		if e.tile_pos.distance_squared_to(ppos) < CAP_RADIUS * CAP_RADIUS:
+			near += 1
+	if near >= max_enemies:
 		return
 	for tries in 30:
 		var p := ppos + Vector2.from_angle(randf() * TAU) * (10.0 + randf() * 8.0)

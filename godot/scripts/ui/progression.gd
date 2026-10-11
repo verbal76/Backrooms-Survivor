@@ -270,6 +270,8 @@ static func apply_perk(id: String, player, mods: Dictionary, weapons, add_bombs:
 				weapons.ammo += 40
 		"trigger_finger":
 			mods.rate_mod *= 0.80
+			if weapons != null and "rate_mod" in weapons:   # BALANCE fix: the perk never reached the weapon system
+				weapons.rate_mod *= 0.80
 		"boom_boom": add_bombs.call(2)
 		"field_medic":
 			player.bandages += 2

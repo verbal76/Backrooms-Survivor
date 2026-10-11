@@ -13,10 +13,10 @@ const TILE := 52.0
 
 ## Weapons.list (Lua keys camelCase -> snake_case). type "melee" | "ranged".
 const LIST: Array[Dictionary] = [
-	{"name": "machete", "type": "melee", "dmg": 12, "rate": 0.5, "reach": 2.5, "stamina_cost": 12, "noise": 8, "color": Color(0.8, 0.8, 0.9), "desc": "Your trusty blade"},
-	{"name": "knife", "type": "melee", "dmg": 6, "rate": 0.3, "reach": 1.2, "stamina_cost": 8, "noise": 5, "color": Color(0.7, 0.7, 0.8), "desc": "Fast, quiet"},
-	{"name": "pipe", "type": "melee", "dmg": 12, "rate": 0.6, "reach": 1.8, "stamina_cost": 15, "noise": 15, "color": Color(0.5, 0.5, 0.6), "desc": "Long, loud clang"},
-	{"name": "axe", "type": "melee", "dmg": 15, "rate": 0.8, "reach": 3.0, "stamina_cost": 20, "noise": 12, "color": Color(0.6, 0.3, 0.2), "desc": "Heavy damage"},
+	{"name": "machete", "type": "melee", "dmg": 12, "rate": 0.5, "reach": 2.5, "stamina_cost": 7, "noise": 8, "color": Color(0.8, 0.8, 0.9), "desc": "Your trusty blade"},
+	{"name": "knife", "type": "melee", "dmg": 6, "rate": 0.3, "reach": 1.2, "stamina_cost": 5, "noise": 5, "color": Color(0.7, 0.7, 0.8), "desc": "Fast, quiet"},
+	{"name": "pipe", "type": "melee", "dmg": 12, "rate": 0.6, "reach": 1.8, "stamina_cost": 9, "noise": 15, "color": Color(0.5, 0.5, 0.6), "desc": "Long, loud clang"},
+	{"name": "axe", "type": "melee", "dmg": 15, "rate": 0.8, "reach": 3.0, "stamina_cost": 12, "noise": 12, "color": Color(0.6, 0.3, 0.2), "desc": "Heavy damage"},
 	{"name": "pistol", "type": "ranged", "dmg": 12, "rate": 0.4, "speed": 12.0, "spread": 0.03, "count": 1, "pierce": false, "spawn_dist": 0.8, "stamina_cost": 5, "noise": 60, "color": Color(0.8, 0.8, 0.8), "desc": "LOUD"},
 	{"name": "shotgun", "type": "ranged", "dmg": 20, "rate": 0.9, "speed": 10.0, "spread": 0.1, "count": 5, "pierce": false, "spawn_dist": 0.95, "stamina_cost": 8, "noise": 85, "color": Color(0.6, 0.4, 0.2), "desc": "VERY LOUD"},
 	{"name": "smg", "type": "ranged", "dmg": 14, "rate": 0.1, "speed": 14.0, "spread": 0.06, "count": 1, "pierce": false, "spawn_dist": 0.8, "stamina_cost": 3, "noise": 70, "color": Color(0.4, 0.4, 0.5), "desc": "Fast, constant noise"},
@@ -56,6 +56,9 @@ var count_mod := 0
 var spread_mod := 1.0
 
 var fire_timer := 0.0
+var _tired := false
+const TIRED_DMG := 0.6      # BALANCE: damage of a swing made below the stamina cost
+const TIRED_RATE := 1.35    # BALANCE: and its recovery time multiplier
 var swing_timer := 0.0
 var swinging := false
 var bullets: Array[Dictionary] = []
@@ -275,9 +278,16 @@ func tick(dt: float) -> void:
 
 func _try_fire(p) -> void:
 	var wep: Dictionary = LIST[current]
-	if fire_timer > 0.0 or p.stamina < wep.stamina_cost:
-		return
 	var is_melee: bool = wep.type == "melee"
+	# BALANCE: a melee swing is never refused for lack of stamina; below the cost it is a weaker "tired" swing
+	_tired = false
+	if fire_timer > 0.0:
+		return
+	if p.stamina < wep.stamina_cost:
+		if is_melee and p.stamina >= 1.0:
+			_tired = true
+		else:
+			return
 	if not is_melee and ammo <= 0:
 		if _no_ammo_msg <= 0.0:
 			_msg("NO AMMO", Color(1, 0.3, 0.3))
@@ -296,8 +306,8 @@ func _try_fire(p) -> void:
 				_msg("HANDS SHAKING...", Color(0.6, 0.2, 0.8))
 				_miss_msg = 2.0
 
-	fire_timer = maxf(fire_timer, -get_physics_process_delta_time()) + wep.rate * rate_mod
-	p.stamina -= wep.stamina_cost
+	fire_timer = maxf(fire_timer, -get_physics_process_delta_time()) + wep.rate * rate_mod * (TIRED_RATE if _tired else 1.0)
+	p.stamina = maxf(0.0, p.stamina - wep.stamina_cost)
 	p.noise = minf(100.0, p.noise + wep.noise * (0.5 if miss else 1.0))
 	fired.emit(current)
 	var angle: float = p.angle
@@ -369,7 +379,7 @@ func _eject_casing(p, wep: Dictionary, dir: Vector2) -> void:
 
 func _melee_hit(p, wep: Dictionary, angle: float) -> void:
 	var reach: float = wep.reach
-	var dmg := get_melee_damage(p.dmg_mult)
+	var dmg := get_melee_damage(p.dmg_mult * (TIRED_DMG if _tired else 1.0))
 	var hits := 0
 	var kills := 0
 	for e in _enemy_list():
