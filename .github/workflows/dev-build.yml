@@ -1,0 +1,128 @@
+name: Dev build (OTA)
+
+# Pushing to the `dev` branch builds the Godot project and publishes a rolling
+# prerelease tagged `dev` containing:
+#   - BackroomsSurvivor-windows-dev.zip   fresh-install Windows build
+#   - BackroomsSurvivor-dev.apk           fresh-install Android build (debug-signed)
+#   - patch.pck + manifest.json           what dev builds download at launch (OTA)
+# Dev builds check manifest.json on startup, verify patch.pck's SHA-256, load it, and run.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "godot/**"
+      - ".github/workflows/dev-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-build
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container: barichello/godot-ci:4.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp build info
+        working-directory: godot
+        run: |
+          sed -i "s/\"build\": [0-9]*/\"build\": ${{ github.run_number }}/" build_info.json
+          sed -i "s/\"sha\": \"[^\"]*\"/\"sha\": \"${GITHUB_SHA::7}\"/" build_info.json
+          sed -i "s/\"built_at\": \"[^\"]*\"/\"built_at\": \"$(date -u +%FT%TZ)\"/" build_info.json
+          sed -i "s|\"manifest_url\": \"[^\"]*\"|\"manifest_url\": \"https://github.com/${{ github.repository }}/releases/download/dev/manifest.json\"|" build_info.json
+          sed -i "s|\"release_page\": \"[^\"]*\"|\"release_page\": \"https://github.com/${{ github.repository }}/releases/tag/dev\"|" build_info.json
+          cat build_info.json
+
+      - name: Install export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          SRC=$(ls -d /root/.local/share/godot/export_templates/*/ | head -1)
+          cp -r "$SRC" ~/.local/share/godot/export_templates/4.3.stable
+          ls ~/.local/share/godot/export_templates/4.3.stable | head
+
+      - name: Import project
+        working-directory: godot
+        run: godot --headless --import || true
+
+      - name: Export Windows (debug)
+        working-directory: godot
+        run: |
+          mkdir -p build/windows build/out
+          godot --headless --export-debug "Windows Dev" build/windows/BackroomsSurvivor.exe
+          command -v zip >/dev/null || (apt-get update && apt-get install -y zip)
+          (cd build/windows && zip -r ../out/BackroomsSurvivor-windows-dev.zip .)
+
+      - name: Export patch pack + manifest
+        working-directory: godot
+        run: |
+          godot --headless --export-pack "Patch" build/out/patch.pck
+          SIZE=$(stat -c%s build/out/patch.pck)
+          SHA=$(sha256sum build/out/patch.pck | cut -d' ' -f1)
+          MIN=$(tr -d '[:space:]' < min_base_build.txt)
+          printf '{"build": %s, "sha": "%s", "pck": "patch.pck", "sha256": "%s", "size": %s, "min_base_build": %s}\n' \
+            "${{ github.run_number }}" "${GITHUB_SHA::7}" "$SHA" "$SIZE" "$MIN" > build/out/manifest.json
+          cat build/out/manifest.json
+
+      # Android is best-effort: if it fails, Windows + the patch pack still publish.
+      - name: Export Android (debug)
+        continue-on-error: true
+        working-directory: godot
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          [ -z "$SDK" ] && SDK=$(ls -d /usr/lib/android-sdk /usr/local/lib/android/sdk /opt/android-sdk 2>/dev/null | head -1)
+          JH="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(which javac)")")")}"
+          echo "Android SDK: $SDK   JDK: $JH"
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
+            -keystore "$HOME/debug.keystore" -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.3.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$SDK"
+          export/android/java_sdk_path = "$JH"
+          export/android/debug_keystore = "$HOME/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+          sed -i "s/^version\/code=.*/version\/code=${{ github.run_number }}/" export_presets.cfg
+          mkdir -p build/android
+          godot --headless --export-debug "Android Dev" build/android/BackroomsSurvivor-dev.apk
+          cp build/android/BackroomsSurvivor-dev.apk build/out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-release-files
+          path: godot/build/out/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dev-release-files
+          path: out
+
+      - name: Publish rolling `dev` release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la out
+          gh release delete dev --repo "${{ github.repository }}" --cleanup-tag --yes || true
+          gh release create dev out/* --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" --prerelease \
+            --title "Dev build ${{ github.run_number }}" \
+            --notes "Rolling dev build ${{ github.run_number }} (${GITHUB_SHA::7}). Dev builds update themselves from manifest.json; use the zip/apk for a fresh install."

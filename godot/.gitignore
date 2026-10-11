@@ -1,0 +1,10 @@
+# Godot generated
+.godot/
+build/
+*.translation
+
+# Third-party asset packs whose licenses forbid redistribution.
+# Drop the files here locally; they are NOT committed to this public repo.
+# If this repo is ever made private, delete these two lines to commit them.
+assets/office_pack/*
+!assets/office_pack/README.md
