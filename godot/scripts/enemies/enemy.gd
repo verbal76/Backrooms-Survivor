@@ -64,11 +64,13 @@ var attack_pulse := 0.0
 var reach := 1.2
 var windup := 0.3
 var recover := 0.8
+var wall_idle := 0.0
 var atk_phase := ""          # "" | "windup" | "recover"
 var atk_t := 0.0
 var atk_dir := Vector2.RIGHT
 var slash_t := 0.0
 const SLASH_TIME := 0.22
+const FLEE_FROM_LIGHT := false
 var alert_pulse := 0.0
 var hurt_snd_cd := 0.0
 var phrase_timer := 0.0
@@ -296,7 +298,9 @@ func tick(dt: float, light: float) -> void:
 
 	# state selection
 	var old_state := state
-	if light_fear > 0.0 and light > 0.7:
+	# NOTE: the Lua's light level is a constant 0.05, so enemies never fled from light. Fleeing from the
+	# headlamp made them hover just outside melee reach, so it stays off (the beam still burns them).
+	if FLEE_FROM_LIGHT and light_fear > 0.0 and light > 0.7:
 		state = "flee"
 	elif alert_level > 35.0:
 		state = "hunt"
@@ -352,6 +356,16 @@ func tick(dt: float, light: float) -> void:
 			var tl := td.length()
 			if tl > 0.2:
 				mv = td / tl * spd * 0.4 * WANDER_MUL
+
+	# wandering into a wall: pick a new heading instead of standing still
+	if state == "wander":
+		if tile_pos.distance_to(prev_pos) < 0.001:
+			wall_idle += dt
+			if wall_idle > 0.5:
+				wander_timer = 0.0
+				wall_idle = 0.0
+		else:
+			wall_idle = 0.0
 
 	# anti-stuck: barely moved for 1.2 s while hunting/searching -> flip slide side, sidestep
 	if state == "hunt" or state == "search":
