@@ -239,6 +239,8 @@ func _scan() -> void:
 		_want("streak")
 	if game.day >= 2:
 		_want("day")
+	if game.traps and game.traps.has_method("trap_near") and (game.traps.trap_near(ppos, 9.0) or game.traps.player_hits > 0):
+		_want("trap")
 	# world
 	for room in game.map.chest_rooms:
 		if not room.looted and Vector2(room.pos).distance_to(ppos) < 26.0:

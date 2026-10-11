@@ -89,6 +89,15 @@ const PAGES := [
 		"- Each CHARACTER (subject file) has its own tokens, upgrades and records for each difficulty.",
 		"- Difficulty (Easy, Normal, Getting Worse, Hell) scales enemy health, damage, speed, spawn rate and how fast sanity and hydration drain. Aim assist is locked off on the two hardest.",
 	]},
+	{"title": "TRAPS", "lines": [
+		"- The Backrooms are rigged. Traps sit on open floor and hurt anything standing on them - you AND the enemies. Lure them in.",
+		"- Bear trap: half hidden until you get close. Stepping on it snaps it shut: 12 damage and you are stuck for about 1.2 seconds (move and mash to break free faster). Enemies take 30.",
+		"- Floor spikes: the holes glint red, then spikes shoot up for 1 second (10 damage, 14 to enemies). Stay off while they glint.",
+		"- Spike pit: a visible pit of spikes. Falling in costs 8 and throws you back out.",
+		"- Fire vent: embers flicker and the light grows, then a jet of flame burns for 2 seconds (6 damage plus about 12 over time). Enemies burn too.",
+		"- Pusher: a wall piston that flashes red, then slams anything in its path (4 damage) and shoves it away.",
+		"- No trap kills you in one hit, and you get a moment of invulnerability after each hit.",
+	]},
 	{"title": "CHESTS, DAYS & THE EXIT", "lines": [
 		"## Days",
 		"- A day is {day_minutes} long. Spawn rates and enemy strength keep climbing with each new day.",
@@ -146,6 +155,8 @@ const TIPS := {
 		"text": "The chest is open and the swarm is coming. Grab the new weapon and supplies it dropped, then back into a corridor so they can only reach you one or two at a time."},
 	"day": {"title": "A NEW DAY", "color": Color(0.9, 0.8, 0.2),
 		"text": "Each day more enemies spawn and they get stronger. On day 30 an exit portal appears (guarded): escape for double tokens or stay as a Living Legend."},
+	"trap": {"title": "WATCH YOUR STEP", "color": Color(1, 0.7, 0.3),
+		"text": "Traps ahead: bear traps (half hidden), flickering spike holes, spike pits, fire vents and wall pushers. They hurt enemies too, so lead hunters across them. Stuck in a bear trap? Move or mash to break free."},
 	"portal": {"title": "EXIT PORTAL", "color": Color(0.4, 1, 0.8),
 		"text": "An exit portal has appeared. Kill the guards around it, then walk up to it to choose: ESCAPE with double tokens, or STAY and keep surviving as a Living Legend. It shows on the minimap."},
 }
@@ -153,4 +164,4 @@ const TIPS := {
 ## Order in which queued tips are shown when several trigger at once (lower = earlier).
 const TIP_PRIORITY := ["hydration_zero", "battery_dead", "sanity_low", "hp_low", "enemy", "chest_open", "sanity",
 	"hydration", "battery_low", "stamina_low", "light_enemy", "item", "orb", "weapons", "ranged", "bomb", "chest",
-	"level_up", "streak", "day", "portal", "stats", "welcome"]
+	"level_up", "streak", "trap", "day", "portal", "stats", "welcome"]
