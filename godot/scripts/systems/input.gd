@@ -357,6 +357,7 @@ func touch_buttons() -> Array:
 	var h := v.y
 	return [
 		{"pos": Vector2(w - 62 * k, h - 62 * k), "r": 32.0 * k, "action": "bomb", "label": "BOMB", "color": Color(1, 0.5, 0.1)},
+		{"pos": Vector2(w - 140 * k, h - 125 * k), "r": 36.0 * k, "action": "attack", "label": "ATTACK", "color": Color(1, 0.25, 0.2)},
 		{"pos": Vector2(w - 52 * k, 200 * k), "r": 26.0 * k, "action": "weapon_next", "label": "WPN", "color": Color(0.7, 0.7, 0.7)},
 		{"pos": Vector2(44 * k, h - 150 * k), "r": 24.0 * k, "action": "use_water", "label": "H2O", "color": Color(0.3, 0.8, 1)},
 		{"pos": Vector2(100 * k, h - 150 * k), "r": 24.0 * k, "action": "use_bandage", "label": "MED", "color": Color(0.3, 1, 0.3)},
@@ -372,21 +373,47 @@ func _update_touch(playing: bool) -> void:
 	var maxr := STICK_MAX_R * k
 	var l: Dictionary = _sticks.left
 	var r: Dictionary = _sticks.right
-	aim_world = _player_px() + _touch_aim_dir * 200.0
 	aim_active = false
+	var attacking: bool = _btn_touch.values().has("attack")
 	if l.id >= 0:
 		var d: Vector2 = l.p - l.o
 		if d.length() > 5.0:
 			move = (d / maxr).limit_length(1.0)
 			sprint = d.length() > maxr * 0.8
+	var aimed := false
 	if r.id >= 0:
 		var d2: Vector2 = r.p - r.o
 		if d2.length() > 10.0 * k:
 			_touch_aim_dir = d2.normalized()
 			aim_angle = d2.angle()
-			aim_world = _player_px() + _touch_aim_dir * 5.0 * game.TILE
+			aimed = true
 			aim_active = true
-			fire = true
+			fire = true     # input.lua: dragging the right stick auto-fires
+	if attacking:
+		fire = true
+		if not aimed:
+			var tgt := _nearest_enemy_dir()
+			if tgt != Vector2.ZERO:
+				_touch_aim_dir = tgt
+			elif move.length() > 0.2:
+				_touch_aim_dir = move.normalized()
+	elif not aimed and move.length() > 0.2:
+		_touch_aim_dir = move.normalized()   # face where you walk when nothing is aimed
+	aim_world = _player_px() + _touch_aim_dir * 5.0 * game.TILE
+
+
+## Direction to the closest enemy within 7 tiles (used by the ATTACK button), or ZERO.
+func _nearest_enemy_dir() -> Vector2:
+	if game.enemies == null or game.player == null:
+		return Vector2.ZERO
+	var best := 7.0
+	var dir := Vector2.ZERO
+	for e in game.enemies.get_enemies():
+		var d: Vector2 = e.tile_pos - game.player.tile_pos
+		if d.length() < best:
+			best = d.length()
+			dir = d.normalized()
+	return dir
 
 
 func _handle_touch(event: InputEventScreenTouch) -> void:
@@ -438,9 +465,21 @@ func _handle_drag(event: InputEventScreenDrag) -> void:
 func _draw_touch() -> void:
 	var k := touch_scale()
 	var maxr := STICK_MAX_R * k
+	var vs := _view_size()
+	var ghosts := {"left": [Vector2(260 * k, vs.y - 85 * k), "MOVE"], "right": [Vector2(vs.x - 300 * k, vs.y - 85 * k), "AIM / ATTACK"]}
 	for key in ["left", "right"]:
 		var s: Dictionary = _sticks[key]
 		if s.id < 0:
+			# faint resting stick so the controls are discoverable; touch anywhere on that half to use it
+			var gp: Vector2 = ghosts[key][0]
+			var gc := Color(1, 1, 1) if key == "left" else Color(1, 0.3, 0.2)
+			_touch_ui.draw_circle(gp, maxr, Color(gc, 0.12))
+			_touch_ui.draw_arc(gp, maxr, 0, TAU, 40, Color(gc, 0.6), 3.0)
+			_touch_ui.draw_circle(gp, 20.0 * k, Color(gc, 0.25))
+			var gf := UITheme.title_font()
+			var gl: String = ghosts[key][1]
+			var gw := gf.get_string_size(gl, HORIZONTAL_ALIGNMENT_LEFT, -1, int(11 * k)).x
+			_touch_ui.draw_string(gf, gp + Vector2(-gw * 0.5, maxr + 16 * k), gl, HORIZONTAL_ALIGNMENT_LEFT, -1, int(12 * k), Color(1, 1, 1, 0.7))
 			continue
 		var col := Color(1, 1, 1) if key == "left" else Color(1, 0.3, 0.2)
 		_touch_ui.draw_circle(s.o, maxr, Color(col, 0.15))
