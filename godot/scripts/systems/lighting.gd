@@ -384,3 +384,12 @@ func _update_fixture_flicker(dt: float) -> void:
 		else:
 			f = 0.94 + 0.06 * sin(_time * 100.0 + e.key.x)   # faint mains hum shimmer
 		l.energy = 0.26 * e.fade * f
+
+
+## Hooks used by the enemy system (shade fading, flee, beam burn).
+func light_at_tile(pos: Vector2) -> float:
+	return get_light_at_world(pos)
+
+
+func headlamp_active() -> bool:
+	return game.player.headlamp_on and battery > 0.0
