@@ -220,7 +220,10 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 				var sr := Rect2(cx - 16 + ox, y, slider_w, row_h - 4)
 				UITheme.slider(ci, sr, v, is_sel, it.min, it.max)
 				var pct := int(round(inverse_lerp(it.min, it.max, v) * 100.0))
-				UITheme.text(ci, "%d%%" % pct, cx - 16 + slider_w + 18 + ox, y + (row_h - 4 - 14) * 0.5 - 1, 14, Color(1, 1, 1, a))
+				var vtxt := "%d%%" % pct
+				if it.has("fmt"):
+					vtxt = it.fmt.call(v)
+				UITheme.text(ci, vtxt, cx - 16 + slider_w + 18 + ox, y + (row_h - 4 - 14) * 0.5 - 1, 14, Color(1, 1, 1, a))
 			"choice", "toggle":
 				UITheme.head(ci, it.label, cx - half_w + 12 + ox, ty, font_size, base, HORIZONTAL_ALIGNMENT_RIGHT, half_w - 12 - 36 + 12)
 				var txt := ""

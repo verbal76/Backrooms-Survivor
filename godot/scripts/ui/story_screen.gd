@@ -1,8 +1,11 @@
 extends UIScreen
-## Intro story scroll (drawStoryScreen). Any key / button / click skips to the save-slot select.
+## Intro story scroll (drawStoryScreen). Any key / button / click skips to the save-slot select (or straight to the
+## title when the last-used character still exists). The scroll starts moving right after a 0.5 s fade-in (it used
+## to sit still for 5 s) and waits for the studio splash to finish before it starts, so none of it is wasted.
 
-const HOLD_SECONDS := 5.0
-const SPEED := 55.0
+const FADE_IN := 0.5
+const SPEED := 95.0
+const RAMP := 0.5                    # seconds to reach full speed
 const LINE_H := 36.0
 const LINES := [
 	"", "",
@@ -54,16 +57,31 @@ const LINES := [
 	"No one is coming for you.",
 	"There is no saving. There is no loading.",
 	"Only survival.", "", "",
-	"[ Press A or ENTER to continue ]", "", "",
+	"[ PRESS ANY KEY / TAP TO CONTINUE ]", "", "",
 ]
 
 var _scroll := 0.0
-var _boost := 0.0
+var _done := false
 
 
 func _on_open(_arg) -> void:
 	_scroll = 0.0
-	_boost = 0.0
+	_done = false
+	input_delay = 0.0
+
+
+func _finish() -> void:
+	if _done:
+		return
+	_done = true
+	var p = ui.progression
+	for i in p.character_count():
+		if p.characters[i].name == ui.options.last_character and ui.options.last_character != "":
+			p.set_active(i)
+			ui.player_name = p.active_name()
+			ui.show_screen("title")
+			return
+	ui.show_screen("charselect")
 
 
 func _input(event: InputEvent) -> void:
@@ -78,24 +96,26 @@ func _input(event: InputEvent) -> void:
 		skip = true
 	elif event is InputEventScreenTouch and event.pressed:
 		skip = true
-	if skip and age > 0.15:
-		ui.show_screen("charselect")
+	if skip and age > 0.1:
+		_finish()
 
 
 func frame(delta: float) -> void:
+	if not get_tree().get_nodes_in_group("splash").is_empty():
+		age = 0.0                    # hold the intro until the studio splash is gone
+		queue_redraw()
+		return
 	super.frame(delta)
-	if age > HOLD_SECONDS:
-		_scroll += SPEED * delta
-	if _scroll > LINES.size() * LINE_H + size.y * 0.3:
-		ui.show_screen("charselect")
+	_scroll += SPEED * clampf(age / RAMP, 0.0, 1.0) * delta
+	if _scroll > size.y * 0.55 + (LINES.size() - 3) * LINE_H:
+		_finish()
 
 
 func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	fill(Color(0, 0, 0))
-	var top_safe := 70.0
-	var base_y := top_safe - 2.0 * LINE_H - _scroll
+	var base_y := h * 0.55 - 2.0 * LINE_H - _scroll    # the text rises from the lower middle, moving from frame 1
 	var t: float = ui.clock
 	var green := Color(0.1, 0.8, 0.1)
 	for i in LINES.size():
@@ -126,6 +146,6 @@ func _draw() -> void:
 	var roll := fposmod(t * 70.0, h + 120.0) - 60.0
 	draw_rect(Rect2(0, roll, w, 40), Color(0.1, 0.8, 0.1, 0.03))
 	UITheme.vignette(self, size, 0.7)
-	var fade_in := 1.0 - clampf(age / 0.6, 0.0, 1.0)
+	var fade_in := 1.0 - clampf(age / FADE_IN, 0.0, 1.0)
 	if fade_in > 0.0:
 		fill(Color(0, 0, 0, fade_in))

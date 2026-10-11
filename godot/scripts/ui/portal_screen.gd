@@ -166,5 +166,5 @@ func _draw_victory() -> void:
 	UITheme.head(self, "+%d TOKENS (2x Escape Bonus!)" % ui.victory_tokens, 0, y - (1.0 - ta) * 10, 26, Color(0.9, 0.8, 0.2, ta), HORIZONTAL_ALIGNMENT_CENTER, w)
 	y += 52.0
 	var blink := 0.5 + 0.5 * sin(t * 3.0)
-	UITheme.text(self, "[ Press Enter / A to continue ]", 0, y, 16, Color(0.7, 0.8, 0.7, (0.4 + 0.6 * blink) * ta), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, "[ %s ]" % {"gamepad": "Press A to continue", "touch": "Tap to continue"}.get(ui.input.active_mode(), "Press Enter to continue"), 0, y, 16, Color(0.7, 0.8, 0.7, (0.4 + 0.6 * blink) * ta), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.5)

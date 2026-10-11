@@ -20,7 +20,7 @@ func _ready() -> void:
 		if Patcher.apply_installed(_base_build):
 			_set_status("Loaded installed patch")
 		await _check_for_update()
-	await get_tree().create_timer(0.4).timeout
+	await get_tree().process_frame
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 

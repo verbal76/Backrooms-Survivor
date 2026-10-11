@@ -1,30 +1,78 @@
 extends UIScreen
-## Options menu (options.lua): volumes, brightness, headlamp, controller, controls viewer, window.
+## Options (options.lua): volumes, brightness, headlamp, tips, window - plus two sub-pages:
+##   CONTROLS: scheme (Auto / Keyboard + Mouse / Gamepad / Touch) and rebinding of every action for keyboard and
+##             gamepad ("press a key / button" capture, conflicts swap, reset to defaults).
+##   TOUCH CONTROLS: button size, opacity, left-handed mirror, haptics, with a live layout preview.
 
 var menu := MenuList.new()
+var touch_menu := MenuList.new()
 var return_to := "title"
-var showing_controls := false
+var section := "main"                 # "main" | "controls" | "touch"
+
+# controls page
+var device := "keyboard"              # which binding table is shown / edited
+var csel := 0
+var cscroll := 0
+var _crows: Array = []                # row descriptors
+var _crects: Array = []               # [index, Rect2] of the drawn rows
+var _msg := ""
+var _msg_t := 0.0
 var _back_rect := Rect2()
 
 
 func _on_bound() -> void:
 	var o: GameOptions = ui.options
-	menu.row_h = 40.0
+	menu.row_h = 38.0
 	menu.add_slider("Music Volume", func(): return o.music_volume, func(v): o.music_volume = v)
 	menu.add_slider("SFX Volume", func(): return o.sfx_volume, func(v): o.sfx_volume = v)
 	menu.add_slider("Brightness", func(): return o.brightness, func(v): o.brightness = v)
 	menu.add_slider("Headlamp", func(): return o.headlamp_brightness, func(v): o.headlamp_brightness = v, 0.1, 1.0)
-	menu.add_choice("Controller", func(): return String(o.get_control_mode()).to_upper(), _cycle_control)
-	menu.add_button("[ VIEW CONTROLS ]", func(): showing_controls = true)
+	menu.add_toggle("Tips", func(): return o.tips_enabled, func(_d): o.tips_enabled = not o.tips_enabled)
+	menu.add_button("[ CONTROLS ]", func(): _open_section("controls"))
+	menu.add_button("[ TOUCH CONTROLS ]", func(): _open_section("touch"))
+	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", return_to))
+	menu.add_button("[ REPLAY TIPS ]", _replay_tips)
 	if not OS.has_feature("mobile"):
 		menu.add_choice("Resolution", func(): return "%dx%d" % [GameOptions.RESOLUTIONS[o.res_index].x, GameOptions.RESOLUTIONS[o.res_index].y], _cycle_res)
 		menu.add_toggle("Fullscreen", func(): return o.fullscreen, _toggle_fullscreen)
 	menu.add_button("[ BACK ]", _back)
 
+	touch_menu.row_h = 40.0
+	var pct := func(v: float) -> String: return "%d%%" % int(round(v * 100.0))
+	var s_size := touch_menu.add_slider("Button Size", func(): return o.touch_size, func(v): o.touch_size = v, 0.6, 1.5, 0.05)
+	s_size["fmt"] = pct
+	var s_op := touch_menu.add_slider("Opacity", func(): return o.touch_opacity, func(v): o.touch_opacity = v, 0.2, 1.0, 0.05)
+	s_op["fmt"] = pct
+	touch_menu.add_toggle("Left-Handed", func(): return o.touch_left_handed, _toggle_lefty)
+	touch_menu.add_toggle("Vibration", func(): return o.haptics, _toggle_haptics)
+	touch_menu.add_button("[ DEFAULTS ]", _touch_defaults)
+	touch_menu.add_button("[ BACK ]", func(): _open_section("main"))
+	ui.input.binding_captured.connect(_on_captured)
+	o.changed.connect(_rebuild_rows)
 
-func _cycle_control(d: int) -> void:
+
+func _toggle_lefty(_d: int) -> void:
+	ui.options.touch_left_handed = not ui.options.touch_left_handed
+
+
+func _toggle_haptics(_d: int) -> void:
+	ui.options.haptics = not ui.options.haptics
+	if ui.options.haptics and OS.has_feature("mobile"):
+		Input.vibrate_handheld(40)
+
+
+func _touch_defaults() -> void:
 	var o: GameOptions = ui.options
-	o.control_mode = posmod(o.control_mode + d, GameOptions.CONTROL_MODES.size())
+	o.touch_size = 1.0
+	o.touch_opacity = 0.6
+	o.touch_left_handed = false
+	o.haptics = true
+
+
+func _replay_tips() -> void:
+	ui.progression.reset_tips()
+	ui.options.tips_enabled = true
+	_flash("Tips will show again for %s." % ui.progression.active_name())
 
 
 func _cycle_res(d: int) -> void:
@@ -44,92 +92,308 @@ func _back() -> void:
 	ui.show_screen(return_to)
 
 
+func _open_section(s: String) -> void:
+	section = s
+	ui.input.cancel_capture()
+	csel = 0
+	cscroll = 0
+	_msg = ""
+	var m := menu if s == "main" else touch_menu
+	m.enter_t = 0.0
+	m.hl_y = -1.0
+	if s == "main":
+		m.sel = 0
+	elif s == "touch":
+		m.sel = 0
+	_rebuild_rows()
+
+
 func _on_open(arg) -> void:
 	return_to = arg if arg is String else "title"
-	showing_controls = false
-	menu.enter_t = 0.0
-	menu.hl_y = -1.0
-	menu.sel = 0
+	_open_section("main")
 
+
+func _flash(m: String) -> void:
+	_msg = m
+	_msg_t = 3.5
+
+
+func _on_captured(_dev: String, _act: String, message: String) -> void:
+	_flash(message)
+
+
+# ---- controls rows ---------------------------------------------------------------------------
+
+func _rebuild_rows() -> void:
+	_crows.clear()
+	_crows.append({"kind": "scheme"})
+	_crows.append({"kind": "device"})
+	for a in GameInput.ACTIONS:
+		if device == "gamepad" and int(a.pad) == -2:
+			continue
+		_crows.append({"kind": "bind", "id": a.id, "label": a.label})
+	_crows.append({"kind": "reset"})
+	_crows.append({"kind": "back"})
+	csel = clampi(csel, 0, _crows.size() - 1)
+
+
+func _cycle_scheme(d: int) -> void:
+	var o: GameOptions = ui.options
+	o.control_mode = posmod(o.control_mode + d, GameOptions.CONTROL_MODES.size())
+	if o.get_control_mode() in ["keyboard", "gamepad"]:
+		device = o.get_control_mode()
+		_rebuild_rows()
+
+
+func _activate_row(i: int) -> void:
+	var r: Dictionary = _crows[i]
+	match r.kind:
+		"scheme":
+			_cycle_scheme(1)
+		"device":
+			device = "gamepad" if device == "keyboard" else "keyboard"
+			_rebuild_rows()
+		"bind":
+			ui.input.begin_capture(device, r.id)
+			_flash("Press a %s for %s   (ESC cancels)" % ["key" if device == "keyboard" else "controller button",
+				String(r.label).to_upper()])
+		"reset":
+			ui.input.reset_bindings(device)
+			_flash("%s bindings reset to defaults" % device.to_upper())
+		"back":
+			_open_section("main")
+
+
+func _adjust_row(i: int, d: int) -> void:
+	var r: Dictionary = _crows[i]
+	if r.kind == "scheme":
+		_cycle_scheme(d)
+	elif r.kind == "device":
+		device = "gamepad" if device == "keyboard" else "keyboard"
+		_rebuild_rows()
+
+
+# ---- input ---------------------------------------------------------------------------------------
 
 func handle_input(inp: GameInput, _d: float) -> void:
-	if showing_controls:
-		if inp.just("ui_back") or inp.just("ui_accept") or inp.just("pause"):
-			showing_controls = false
+	if inp.capturing():
 		return
+	if section == "controls":
+		if inp.just("ui_up"):
+			csel = posmod(csel - 1, _crows.size())
+		if inp.just("ui_down"):
+			csel = posmod(csel + 1, _crows.size())
+		if inp.just("ui_left"):
+			_adjust_row(csel, -1)
+		if inp.just("ui_right"):
+			_adjust_row(csel, 1)
+		if inp.just("ui_accept"):
+			_activate_row(csel)
+		if inp.just("ui_back") or inp.just("pause"):
+			_open_section("main")
+		return
+	var m := menu if section == "main" else touch_menu
 	if inp.just("ui_up"):
-		menu.nav(-1)
+		m.nav(-1)
 	if inp.just("ui_down"):
-		menu.nav(1)
+		m.nav(1)
 	if inp.just("ui_left"):
-		menu.adjust(-1)
+		m.adjust(-1)
 	if inp.just("ui_right"):
-		menu.adjust(1)
+		m.adjust(1)
 	if inp.just("ui_accept"):
-		menu.activate()
+		m.activate()
 	if inp.just("ui_back") or inp.just("pause"):
-		_back()
+		if section == "main":
+			_back()
+		else:
+			_open_section("main")
 
 
 func on_pointer_move(p: Vector2) -> void:
-	if not showing_controls:
-		menu.pointer_move(p)
+	if section == "controls":
+		for e in _crects:
+			if e[1].has_point(p):
+				csel = e[0]
+		return
+	(menu if section == "main" else touch_menu).pointer_move(p)
 
 
 func on_pointer_down(p: Vector2) -> void:
-	if showing_controls:
-		showing_controls = false
+	if section == "controls":
+		if ui.input.capturing():
+			ui.input.cancel_capture()
+			return
+		for e in _crects:
+			if e[1].has_point(p):
+				csel = e[0]
+				var r: Dictionary = _crows[csel]
+				if r.kind in ["scheme", "device"]:
+					_adjust_row(csel, 1 if p.x >= e[1].get_center().x else -1)
+				else:
+					_activate_row(csel)
+				return
 		return
-	menu.pointer_down(p)
+	(menu if section == "main" else touch_menu).pointer_down(p)
 
 
 func on_pointer_drag(p: Vector2) -> void:
-	menu.pointer_drag(p)
+	if section != "controls":
+		(menu if section == "main" else touch_menu).pointer_drag(p)
 
 
 func on_pointer_up(_p: Vector2) -> void:
-	menu.pointer_up()
+	if section != "controls":
+		(menu if section == "main" else touch_menu).pointer_up()
 
+
+func frame(delta: float) -> void:
+	super.frame(delta)
+	if _msg_t > 0.0:
+		_msg_t -= delta
+		if _msg_t <= 0.0:
+			_msg = ""
+
+
+# ---- drawing ---------------------------------------------------------------------------------------
 
 func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	if return_to == "pause":
-		fill(Color(0, 0, 0, 0.9))
+		fill(Color(0, 0, 0, 0.92))
 	else:
 		fill(Color(0.01, 0.008, 0.004, 0.96))
 		noise(200, Color(0.12, 0.1, 0.04))
-	if showing_controls:
-		_draw_controls(w, h)
-	else:
-		var total := menu.total_height()
-		var top := floorf((h - total) * 0.5) + 10.0
-		var a := clampf(age / 0.25, 0.0, 1.0)
-		UITheme.head(self, "OPTIONS", 0, top - 70 - (1.0 - a) * 12, 40, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
-		menu.draw(self, w * 0.5, top, dt, ui.clock)
-		UITheme.text(self, "LEFT/RIGHT adjust    ESC back", 0, h - 26, 13, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var a := clampf(age / 0.25, 0.0, 1.0)
+	match section:
+		"controls":
+			_draw_controls(w, h, a)
+		"touch":
+			_draw_touch(w, h, a)
+		_:
+			var total := menu.total_height()
+			var top := floorf((h - total) * 0.5) + 14.0
+			UITheme.head(self, "OPTIONS", 0, maxf(10.0, top - 62) - (1.0 - a) * 12, 40, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+			menu.draw(self, w * 0.5, top, dt, ui.clock)
+			UITheme.text(self, "LEFT/RIGHT adjust    ESC back", 0, h - 26, 13, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+	if _msg != "":
+		UITheme.text(self, _msg, 0, h - 52, 15, Color(1, 0.9, 0.4, clampf(_msg_t, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.4)
 
 
-func _draw_controls(w: float, h: float) -> void:
-	var mode: String = ui.options.get_control_mode()
-	if mode == "auto":
-		mode = ui.input.active_mode()
-	var scheme: Dictionary = GameInput.SCHEMES.get(mode, GameInput.SCHEMES.keyboard)
-	var controls: Array = scheme.controls
+func _binding_text(id: String) -> String:
+	var inp: GameInput = ui.input
+	if device == "keyboard":
+		return inp.key_name(inp.key_of(id))
+	var c := inp.pad_of(id)
+	return inp.pad_name(c) if c >= 0 else "None"
+
+
+func _draw_controls(w: float, h: float, a: float) -> void:
+	var inp: GameInput = ui.input
+	UITheme.head(self, "CONTROLS", 0, 12, 36, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	var row_h := 28.0
-	var pw := minf(w - 80.0, 620.0)
-	var ph := row_h * controls.size() + 150.0
-	var r := Rect2((w - pw) * 0.5, maxf(20.0, (h - ph) * 0.5), pw, ph)
-	UITheme.panel(self, r, Color(0.03, 0.025, 0.012, 0.96), Color(0.9, 0.8, 0.2, 0.55), 8, 2)
-	UITheme.head(self, "CONTROLS: %s" % String(scheme.name).to_upper(), r.position.x, r.position.y + 14, 26, UITheme.GOLD, HORIZONTAL_ALIGNMENT_CENTER, pw)
-	UITheme.line_sep(self, r.position.x + 30, r.end.x - 30, r.position.y + 56)
-	var y := r.position.y + 68.0
-	var key_w := pw * 0.42
-	for c in controls:
-		UITheme.text(self, c[0], r.position.x + 16, y, 16, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_RIGHT, key_w)
-		UITheme.text(self, c[1], r.position.x + 16 + key_w + 20, y, 16, Color(0.8, 0.8, 0.8))
+	var top := 62.0
+	var vis := maxi(4, int((h - top - 70.0) / row_h))
+	if csel < cscroll:
+		cscroll = csel
+	if csel >= cscroll + vis:
+		cscroll = csel - vis + 1
+	cscroll = clampi(cscroll, 0, maxi(0, _crows.size() - vis))
+	var pw := minf(w - 60.0, 640.0)
+	var px := (w - pw) * 0.5
+	_crects.clear()
+	var y := top
+	for i in range(cscroll, mini(_crows.size(), cscroll + vis)):
+		var r: Dictionary = _crows[i]
+		var rect := Rect2(px, y, pw, row_h - 2)
+		_crects.append([i, rect])
+		var sel := i == csel
+		if sel:
+			UITheme.panel(self, rect, Color(0.4, 0.35, 0.15, 0.5), Color(1, 0.9, 0.3, 0.55), 5, 1)
+		var col := UITheme.GOLD_BRIGHT if sel else Color(0.75, 0.75, 0.75)
+		var ty := y + (row_h - 2 - UITheme.text_h(17)) * 0.5
+		match r.kind:
+			"scheme":
+				var mode: String = ui.options.get_control_mode()
+				var shown := mode.to_upper()
+				if mode == "auto":
+					shown = "AUTO  (now: %s)" % inp.active_mode().to_upper()
+				UITheme.text(self, "Control Scheme", px + 14, ty, 17, col)
+				UITheme.text(self, "<  %s  >" % shown, px, ty, 17, Color(0.5, 1, 0.6) if mode == "auto" else Color(1, 0.9, 0.4), HORIZONTAL_ALIGNMENT_RIGHT, pw - 14)
+			"device":
+				UITheme.text(self, "Edit Bindings For", px + 14, ty, 17, col)
+				UITheme.text(self, "<  %s  >" % ("KEYBOARD + MOUSE" if device == "keyboard" else "GAMEPAD"), px, ty, 17, Color(1, 0.9, 0.4), HORIZONTAL_ALIGNMENT_RIGHT, pw - 14)
+			"bind":
+				UITheme.text(self, r.label, px + 14, ty, 17, col)
+				var waiting: bool = inp.capturing() and sel
+				var txt := _binding_text(r.id)
+				var vcol := Color(1, 0.95, 0.5) if inp.is_default(device, r.id) else Color(0.5, 1, 0.6)
+				if waiting:
+					txt = "press a %s..." % ("key" if device == "keyboard" else "button")
+					vcol = Color(1, 0.5, 0.3, 0.6 + 0.4 * sin(ui.clock * 10.0))
+				var bw := 170.0
+				UITheme.panel(self, Rect2(px + pw - bw - 10, y + 2, bw, row_h - 6), Color(0.1, 0.09, 0.05, 0.9), Color(vcol.r, vcol.g, vcol.b, 0.5), 4, 1)
+				UITheme.text(self, txt, px + pw - bw - 10, ty, 16, vcol, HORIZONTAL_ALIGNMENT_CENTER, bw)
+				if device == "keyboard" and String(r.id).begins_with("move_"):
+					UITheme.text(self, "(arrow keys always work)", px + 200, ty + 2, 12, Color(0.45, 0.45, 0.4))
+				if device == "keyboard" and r.id == "attack":
+					UITheme.text(self, "(left click always works)", px + 200, ty + 2, 12, Color(0.45, 0.45, 0.4))
+			"reset":
+				UITheme.head(self, "[ RESET %s TO DEFAULTS ]" % device.to_upper(), px, ty - 1, 18, Color(1, 0.6, 0.3) if sel else Color(0.7, 0.45, 0.25), HORIZONTAL_ALIGNMENT_CENTER, pw)
+			"back":
+				UITheme.head(self, "[ BACK ]", px, ty - 1, 18, col, HORIZONTAL_ALIGNMENT_CENTER, pw)
 		y += row_h
-	UITheme.line_sep(self, r.position.x + 30, r.end.x - 30, y + 6)
-	UITheme.text(self, "ONE LIFE SURVIVAL - No saves, no loads", r.position.x, y + 16, 14, Color(0.7, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER, pw)
-	UITheme.text(self, "1 Day = %d minutes - Survive as long as you can" % int(ui.game.DAY_SECONDS / 60.0), r.position.x, y + 36, 14, Color(0.7, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER, pw)
+	if cscroll > 0:
+		UITheme.text(self, "^", 0, top - 16, 14, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_CENTER, w)
+	if cscroll + vis < _crows.size():
+		UITheme.text(self, "v", 0, y, 14, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint := "UP/DOWN select    ENTER rebind    LEFT/RIGHT change    ESC back"
+	if inp.active_mode() == "gamepad":
+		hint = "D-PAD select    A rebind    B back    (while rebinding: START cancels)"
+	elif inp.active_mode() == "touch":
+		hint = "TAP a row to rebind    tap the arrows to change"
+	if inp.capturing():
+		hint = "Waiting for input...  ESC cancels.  If a key is already used the two actions swap."
+	UITheme.text(self, hint, 0, h - 26, 13, Color(0.5, 0.47, 0.32, 0.9), HORIZONTAL_ALIGNMENT_CENTER, w)
+
+
+func _draw_touch(w: float, h: float, a: float) -> void:
+	UITheme.head(self, "TOUCH CONTROLS", 0, 14, 36, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var total := touch_menu.total_height()
+	touch_menu.draw(self, w * 0.5, 66.0, dt, ui.clock)
+	# live preview of the layout (landscape phone outline)
+	var pw := minf(w - 80.0, 560.0)
+	var ph := pw * 0.46
+	var avail := h - (66.0 + total) - 50.0
+	if ph > avail:
+		ph = maxf(80.0, avail)
+		pw = ph / 0.46
+	var pr := Rect2((w - pw) * 0.5, 66.0 + total + 10.0, pw, ph)
+	UITheme.panel(self, pr, Color(0.02, 0.02, 0.015, 0.95), Color(0.9, 0.8, 0.2, 0.5), 10, 2)
+	var vsize := Vector2(1600.0, 720.0) if pr.size.x / pr.size.y > 2.0 else Vector2(960.0, 720.0)
+	vsize = Vector2(pr.size.x / pr.size.y * 720.0, 720.0)
+	var lay: Dictionary = ui.input.touch_layout(vsize)
+	var sc := pr.size.y / 720.0
+	var op: float = ui.options.touch_opacity
+	var f := op / 0.6
+	var font := UITheme.title_font()
+	for key in ["move_c", "aim_c"]:
+		var c: Vector2 = pr.position + lay[key] * sc
+		var col := Color(1, 1, 1) if key == "move_c" else Color(1, 0.3, 0.2)
+		draw_circle(c, lay.stick_r * sc, Color(col, minf(1.0, 0.16 * f)))
+		draw_arc(c, lay.stick_r * sc, 0, TAU, 32, Color(col, minf(1.0, 0.7 * f)), 1.5)
+	for b in lay.buttons:
+		var c2: Vector2 = pr.position + b.pos * sc
+		var cc: Color = b.color
+		draw_circle(c2, b.r * sc, Color(cc, minf(1.0, 0.3 * f)))
+		draw_arc(c2, b.r * sc, 0, TAU, 24, Color(cc, minf(1.0, 0.95 * f)), 1.5)
+		var fs := maxi(7, int(b.r * sc * 0.5))
+		var tw := font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		if tw > b.r * sc * 1.7:
+			fs = maxi(6, int(fs * b.r * sc * 1.7 / tw))
+			tw = font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		draw_string(font, c2 + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, minf(1.0, 0.95 * f)))
+	UITheme.text(self, "PREVIEW", pr.position.x + 8, pr.position.y + 4, 11, Color(0.6, 0.6, 0.5, 0.7))
+	UITheme.text(self, "Sticks float inside their half of the screen. Keep thumbs inside the safe area.", 0, h - 26, 13, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)

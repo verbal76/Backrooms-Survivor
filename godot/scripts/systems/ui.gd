@@ -26,6 +26,7 @@ const PauseScreen = preload("res://scripts/ui/pause_screen.gd")
 const PerkScreen = preload("res://scripts/ui/perk_screen.gd")
 const DeathScreen = preload("res://scripts/ui/death_screen.gd")
 const PortalScreen = preload("res://scripts/ui/portal_screen.gd")
+const HowtoScreen = preload("res://scripts/ui/howto_screen.gd")
 const Hud = preload("res://scripts/ui/hud.gd")
 const Overlays = preload("res://scripts/ui/overlays.gd")
 
@@ -71,6 +72,7 @@ var aim_assist_enabled: bool:
 
 var hud: Control
 var overlays: Control
+var tips: TipSystem
 var menu_layer: CanvasLayer
 var hud_layer: CanvasLayer
 var fade: ColorRect
@@ -103,6 +105,9 @@ func setup(g) -> void:
 	overlays = Overlays.new()
 	overlays.bind(self, game)
 	hud_layer.add_child(overlays)
+	tips = TipSystem.new()
+	tips.bind(self, game)
+	hud_layer.add_child(tips)
 
 	menu_layer = CanvasLayer.new()
 	menu_layer.layer = 30
@@ -110,7 +115,7 @@ func setup(g) -> void:
 	var defs := {
 		"story": StoryScreen, "charselect": CharSelectScreen, "nameentry": NameEntryScreen, "title": TitleScreen,
 		"shop": ShopScreen, "options": OptionsScreen, "pause": PauseScreen, "perk": PerkScreen,
-		"death": DeathScreen, "portal": PortalScreen,
+		"death": DeathScreen, "portal": PortalScreen, "howto": HowtoScreen,
 	}
 	for k in defs:
 		var s: UIScreen = defs[k].new()
@@ -132,6 +137,7 @@ func setup(g) -> void:
 	game.player.leveled_up.connect(_on_level_up)
 	game.enemy_killed.connect(_on_enemy_killed)
 	game.player.damaged.connect(_on_player_damaged)
+	input.mode_changed.connect(_on_mode_changed)
 	get_viewport().size_changed.connect(_on_resized)
 
 	player_name = ""
@@ -158,10 +164,27 @@ func _process(delta: float) -> void:
 	var playing: bool = game.state in ["playing", "paused", "perk", "portal"]
 	hud.visible = playing
 	overlays.visible = playing
+	_apply_safe_area()
 	if playing:
 		hud.frame(delta)
 		overlays.frame(delta)
 	_update_cursor()
+
+
+## Keep the HUD inside display cutouts / system bars on phones (touch mode only).
+func _apply_safe_area() -> void:
+	var ins := Vector4.ZERO
+	if input and input.active_mode() == "touch":
+		ins = input.safe_insets()
+	hud.offset_left = ins.x
+	hud.offset_top = ins.y
+	hud.offset_right = -ins.z
+	hud.offset_bottom = -ins.w
+
+
+func _on_mode_changed(m: String) -> void:
+	if game.state == "playing":
+		add_message("Controls: %s" % {"keyboard": "KEYBOARD + MOUSE", "gamepad": "GAMEPAD", "touch": "TOUCH"}.get(m, m), Color(0.7, 0.7, 0.5), 2.0)
 
 
 func _update_cursor() -> void:
@@ -201,6 +224,7 @@ func reset_run() -> void:
 	_last_weapon = -1
 	_last_lamp = true
 	hud.reset()
+	tips.reset_run()
 	add_message("%s has entered the Backrooms" % _name(), Color(0.9, 0.8, 0.2))
 	run_started.emit()
 
@@ -219,6 +243,7 @@ func tick(dt: float) -> void:
 	if handle_item_hotkeys:
 		_item_hotkeys()
 	_watch_changes()
+	tips.tick(dt)
 
 
 ## Runs every physics frame while state != "playing".
@@ -230,25 +255,28 @@ func tick_menu(dt: float) -> void:
 
 func _item_hotkeys() -> void:
 	var p = game.player
+	# game.objects already consumes water / bandage / food (handle_consumables); doing it here too would use TWO
+	# items per press. In that case only report "NO ..." when there is nothing to use.
+	var others: bool = game.objects != null and bool(game.objects.get("handle_consumables"))
 	if input.just("use_water"):
-		if p.use_almond_water():
+		if p.almond_water <= 0:
+			add_message("NO ALMOND WATER", Color(1, 0.3, 0.3))
+		elif not others and p.use_almond_water():
 			add_message("Drank Almond Water", Color(0.3, 0.8, 1))
 			game.fx.float_text(p.position + Vector2(0, -60), "+H2O", Color(0.3, 0.8, 1))
-		else:
-			add_message("NO ALMOND WATER", Color(1, 0.3, 0.3))
 	if input.just("use_bandage"):
-		if p.use_bandage():
+		if p.bandages <= 0:
+			add_message("NO BANDAGES", Color(1, 0.3, 0.3))
+		elif not others and p.use_bandage():
 			add_message("Used Bandage", Color(0.3, 1, 0.3))
 			game.fx.float_text(p.position + Vector2(0, -60), "+HP", Color(0.3, 1, 0.3))
 			game.fx.burst(p.position, "pickup", Vector2.ZERO)
-		else:
-			add_message("NO BANDAGES", Color(1, 0.3, 0.3))
 	if input.just("use_food"):
-		if p.use_food():
+		if p.food <= 0:
+			add_message("NO FOOD", Color(1, 0.3, 0.3))
+		elif not others and p.use_food():
 			add_message("Ate Food", Color(0.9, 0.7, 0.3))
 			game.fx.float_text(p.position + Vector2(0, -60), "+STAMINA", Color(0.9, 0.7, 0.3))
-		else:
-			add_message("NO FOOD", Color(1, 0.3, 0.3))
 
 
 func _watch_changes() -> void:
@@ -273,7 +301,7 @@ func _on_state_changed(s: String) -> void:
 	_prev_state = s
 	match s:
 		"title":
-			if screen_name not in ["story", "charselect", "nameentry", "title", "shop", "options"]:
+			if screen_name not in ["story", "charselect", "nameentry", "title", "shop", "options", "howto"]:
 				show_screen("title")
 		"playing":
 			_hide_all()
@@ -435,6 +463,19 @@ func weapon_info() -> Dictionary:
 	return {"name": "machete", "type": "melee", "color": Color(0.8, 0.8, 0.9)}
 
 
+## Why an attack would be refused right now: "" (ready) | "stamina" | "ammo".
+func attack_state() -> String:
+	var w = game.weapons
+	if w == null or not w.has_method("get_current"):
+		return ""
+	var wep: Dictionary = w.get_current()
+	if game.player.stamina < float(wep.get("stamina_cost", 0)):
+		return "stamina"
+	if wep.get("type", "melee") == "ranged" and int(w.ammo) <= 0:
+		return "ammo"
+	return ""
+
+
 func ammo() -> int:
 	var w = game.weapons
 	if w and "ammo" in w:
@@ -451,11 +492,17 @@ func _find_prop(prop: String):
 
 ## Bomb count: exposed as `bomb_count` on game.weapons / game.objects (+ optional add_bombs(n)).
 func _bomb_count() -> int:
+	var wb = game.weapons.get("bomb") if game.weapons else null
+	if wb != null and "count" in wb:
+		return int(wb.count)          # the real bomb stock lives on the weapons system's bomb node
 	var n = _find_prop("bomb_count")
 	return int(n.bomb_count) if n else 0
 
 
 func _add_bombs(count: int) -> void:
+	if game.weapons and game.weapons.has_method("add_bomb"):
+		game.weapons.add_bomb(count)
+		return
 	for n in [game.weapons, game.objects, game]:
 		if n != null and n.has_method("add_bombs"):
 			n.add_bombs(count)
@@ -519,6 +566,7 @@ func _effects() -> Array:
 func _on_level_up(level: int) -> void:
 	add_message("%s leveled up! (Lv.%d)" % [_name(), level], Color(1, 0.8, 0.2))
 	hud.pop_level()
+	input.vibrate(90)
 
 
 func _on_enemy_killed(_pos: Vector2, _kind: String, _xp: int) -> void:
@@ -527,7 +575,9 @@ func _on_enemy_killed(_pos: Vector2, _kind: String, _xp: int) -> void:
 		add_message("%d KILL STREAK!" % p.current_streak, Color(1, 0.5, 0.1))
 		hud.pop_streak()
 	hud.pop_kill()
+	input.vibrate(25)
 
 
-func _on_player_damaged(_amount: float) -> void:
+func _on_player_damaged(amount: float) -> void:
 	hud.pop_damage()
+	input.vibrate(int(clampf(40.0 + amount * 3.0, 40.0, 220.0)))

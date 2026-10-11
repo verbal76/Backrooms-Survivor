@@ -14,6 +14,7 @@ func _on_bound() -> void:
 	var aim := menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
 	aim["enabled"] = func(): return ui.difficulty < 3
 	menu.add_button("[ RESUME ]", _resume)
+	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", "pause"))
 	menu.add_button("[ OPTIONS ]", func(): ui.show_screen("options", "pause"))
 	menu.add_button("[ QUIT TO MENU ]", func(): ui.back_to_title(), Color(1, 0.4, 0.3))
 
