@@ -125,7 +125,8 @@ func _draw() -> void:
 			continue
 		if "[" in line and i > LINES.size() - 6:
 			if sin(t * 3.0) > 0.0:
-				UITheme.head(self, line, 0, y, 28, Color(0.1, 0.95, 0.1), HORIZONTAL_ALIGNMENT_CENTER, w)
+				var cont: String = ui.input.hint("[ PRESS ANY KEY TO CONTINUE ]", "[ PRESS ANY BUTTON TO CONTINUE ]", "[ TAP TO CONTINUE ]")
+				UITheme.head(self, cont, 0, y, 28, Color(0.1, 0.95, 0.1), HORIZONTAL_ALIGNMENT_CENTER, w)
 			continue
 		var sz := UITheme.fit(line, 28, w - 80.0, UITheme.title_font())
 		# phosphor glow
@@ -140,7 +141,7 @@ func _draw() -> void:
 	draw_rect(Rect2(0, 0, w, 40), Color(0, 0, 0))
 	draw_rect(Rect2(0, h - 30, w, 30), Color(0, 0, 0))
 	UITheme.head(self, "ASYNC RESEARCH LABS // INCIDENT REPORT", 0, 8, 22, Color(0.1, 0.5, 0.1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w)
-	UITheme.text(self, "ANY KEY TO SKIP", 0, h - 22, 12, Color(0.1, 0.4, 0.1, 0.5 + 0.3 * sin(t * 3.0)), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, ui.input.hint("ANY KEY TO SKIP", "ANY BUTTON TO SKIP", "TAP TO SKIP"), 0, h - 22, 13, Color(0.2, 0.6, 0.2, 0.7 + 0.3 * sin(t * 3.0)), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0.05, 0, 0.35), 3.0)
 	# rolling CRT bar + flicker
 	var roll := fposmod(t * 70.0, h + 120.0) - 60.0

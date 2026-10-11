@@ -22,7 +22,8 @@ const PAGES := [
 		"- The map shows more on lower difficulties: Easy shows a wide area with enemies and items, Normal the local area with enemies, harder modes only the local area.",
 	]},
 	{"title": "FIGHTING", "lines": [
-		"- Hold {attack} to attack with the weapon you are holding. Change weapon with {weapon_next} / {weapon_prev} (mouse wheel works too).",
+		"- Hold {attack} to attack with the weapon you are holding. Change weapon with {weapon_next} / {weapon_prev}.",
+		"[kb] - The mouse wheel also changes weapon.",
 		"## Melee (machete, knife, pipe, axe)",
 		"- Hits everything inside a 120 degree cone in front of you, out to the weapon's reach: machete 2.5 tiles, knife 1.2, pipe 1.8, axe 3.0. Free to use, but costs stamina.",
 		"## Ranged (pistol, shotgun, SMG, suppressed pistol)",

@@ -63,6 +63,11 @@ var shake_scale := 1.0
 
 ## Auto-lower emission counts when frames get slow (set false for deterministic tests).
 var adaptive := true
+## Options > Quality (see platform/quality.gd): multipliers applied on top of the adaptive budget.
+var _q_particles := 1.0
+var _q_motes := MAX_MOTES
+var _q_decals := MAX_DECALS
+var _q_figs := MAX_FIGS
 ## 0..1 from options.reduce_flashing: damps flashes / flicker / slow-mo.
 var calm := false
 
@@ -91,6 +96,7 @@ var _base_zoom := Vector2.ONE
 var _noise := FastNoiseLite.new()
 var _time := 0.0
 var _decals_dirty := true
+var _decal_cull_center := Vector2.ZERO
 var _fade_timer := 0.0
 var _burn_tex: Texture2D
 var _grey_stains: Array = []
@@ -320,14 +326,28 @@ func float_text(world_px: Vector2, text: String, color := Color.WHITE, size_mult
 
 func burst(world_px: Vector2, kind: String, dir := Vector2.ZERO) -> void:
 	match kind:
-		"hit": _burst_hit(world_px, dir)
+		"hit":
+			_rumble_near(world_px, "hit", 1.0, 360.0)
+			_burst_hit(world_px, dir)
 		"spark": _burst_spark(world_px, dir)
 		"smoke": _burst_smoke(world_px, dir, 5, 1.0)
 		"gib": _burst_gib(world_px, dir)
 		"muzzle": _burst_muzzle(world_px, dir)
 		"pickup": _burst_pickup(world_px)
 		"levelup": _burst_levelup(world_px)
-		"explosion": _burst_explosion(world_px)
+		"explosion":
+			_rumble_near(world_px, "explosion", 1.2, 620.0)
+			_burst_explosion(world_px)
+
+
+## Controller rumble for events close to the player (strength fades with distance).
+func _rumble_near(world_px: Vector2, kind: String, base: float, reach: float) -> void:
+	var inp = game.get("input")
+	if inp == null or game.player == null or not inp.has_method("rumble"):
+		return
+	var d := world_px.distance_to(game.player.position)
+	if d < reach:
+		inp.rumble(kind, base * (1.0 - d / reach * 0.7))
 
 
 func blood(world_px: Vector2, size := 1.0, tint := Color(-1, 0, 0, 0), grey := false) -> void:
@@ -410,7 +430,22 @@ func streak_flourish(streak: int) -> void:
 
 ## Scale an emission count by the adaptive quality budget (always at least 1).
 func _n(count: int) -> int:
-	return maxi(1, int(ceilf(count * _budget)))
+	return maxi(1, int(ceilf(count * _budget * _q_particles)))
+
+
+## Quality preset hook (Quality.apply). Caps the pools instead of reallocating them.
+func set_quality(p: Dictionary) -> void:
+	_q_particles = float(p.particles)
+	_q_motes = clampi(int(p.motes), 0, MAX_MOTES)
+	_q_decals = clampi(int(p.decals), 10, MAX_DECALS)
+	_q_figs = clampi(int(p.figs), 0, MAX_FIGS)
+	_lit_pool.cap = maxi(24, mini(_lit_pool.pos.size(), int(220 * _q_particles)))
+	_glow_pool.cap = maxi(32, mini(_glow_pool.pos.size(), int(300 * _q_particles)))
+	_lit_pool.count = mini(_lit_pool.count, _lit_pool.cap)
+	_glow_pool.count = mini(_glow_pool.count, _glow_pool.cap)
+	while _decals.size() > _q_decals:
+		_decals.pop_front()
+	_decals_dirty = true
 
 
 func _snd(sound: String, world_px, vol := 0.5, pitch := 1.0) -> void:
@@ -838,7 +873,7 @@ func _add_decal(d: Dictionary) -> void:
 	if game.map.is_solid(tp.x, tp.y):
 		return          # never paint walls
 	_decals.append(d)
-	while _decals.size() > MAX_DECALS:
+	while _decals.size() > _q_decals:
 		_decals.pop_front()
 	_decals_dirty = true
 	if d.has("grow"):
@@ -853,8 +888,16 @@ func _decal_alpha(d: Dictionary) -> float:
 	return clampf(1.0 - (age - hold) / DECAL_FADE_TIME, 0.0, 1.0) * 0.8
 
 
+const DECAL_CULL_PX := 1000.0       # decals farther than this from the camera are not recorded (view radius ~700 px)
+
+
 func _draw_decals(ci: CanvasItem) -> void:
+	var cam: Vector2 = game.camera.get_screen_center_position() if game.camera else Vector2.ZERO
+	_decal_cull_center = cam
+	var cull_sq := DECAL_CULL_PX * DECAL_CULL_PX
 	for d in _decals:
+		if d.pos.distance_squared_to(cam) > cull_sq:
+			continue
 		var a := _decal_alpha(d)
 		if a <= 0.0:
 			continue
@@ -1169,12 +1212,12 @@ func _tick_motes(dt: float) -> void:
 			v *= maxf(0.0, 1.0 - 0.8 * dt)
 			_motes_vel[i] = v
 			_motes_pos[i] += v * dt
-	if not on:
+	if not on or _q_motes <= 0:
 		return
 	_mote_acc += dt * 9.0 * _budget
 	while _mote_acc >= 1.0:
 		_mote_acc -= 1.0
-		for i in MAX_MOTES:
+		for i in _q_motes:
 			if _motes_t[i] >= _motes_life[i]:
 				var ang: float = pl.angle + randf_range(-0.8, 0.8)
 				_motes_pos[i] = pl.position + Vector2.from_angle(ang) * randf_range(1.5, 9.0) * TILE_PX()
@@ -1213,7 +1256,7 @@ func _tick_sanity(dt: float, rdt: float) -> void:
 	var sev := clampf(1.0 - pct / 0.35, 0.0, 1.0)
 	if sev > 0.0 and _budget > 0.5 and game.state == "playing":
 		_fig_t -= dt
-		if _fig_t <= 0.0 and _figs.size() < MAX_FIGS:
+		if _fig_t <= 0.0 and _figs.size() < _q_figs:
 			_fig_t = lerpf(14.0, 4.0, sev) * randf_range(0.7, 1.4)
 			_spawn_figure(pl)
 	var i := _figs.size() - 1
@@ -1332,6 +1375,8 @@ func _process(delta: float) -> void:
 	if _decal_anim > 0.0:
 		_decal_anim -= dt
 		_decals_dirty = true
+	if game.camera and game.camera.get_screen_center_position().distance_squared_to(_decal_cull_center) > 260.0 * 260.0:
+		_decals_dirty = true            # the camera moved far enough that the off-screen cull set changed
 	if _decals_dirty:
 		_decals_dirty = false
 		_decal_node.queue_redraw()

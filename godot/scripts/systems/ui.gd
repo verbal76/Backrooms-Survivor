@@ -16,6 +16,8 @@ extends Node
 ## Optional hooks the UI reads if present (all null-guarded): see _bomb_count(), _battery(), _portal(),
 ## _map_markers() and _effects() below.
 
+const Platform = preload("res://scripts/platform/platform.gd")
+const Quality = preload("res://scripts/platform/quality.gd")
 const TitleScreen = preload("res://scripts/ui/title_screen.gd")
 const StoryScreen = preload("res://scripts/ui/story_screen.gd")
 const CharSelectScreen = preload("res://scripts/ui/charselect_screen.gd")
@@ -83,6 +85,8 @@ var _prev_state := "title"
 var _last_weapon := -1
 var _last_lamp := true
 var _fade_tween: Tween
+var _auto_paused := false         # we paused because the window lost focus / the Deck suspended
+var _was_muted := false
 
 
 func setup(g) -> void:
@@ -92,6 +96,7 @@ func setup(g) -> void:
 	progression = Progression.new()
 	difficulty = options.difficulty
 	options.apply_window()
+	apply_options()
 	_build_run_mods()
 	game.set_meta("run_mods", run_mods)
 	game.set_meta("difficulty", difficulty)
@@ -147,6 +152,61 @@ func setup(g) -> void:
 	_ui_music(true)
 
 
+## Re-apply every option that has a runtime side effect (called after any change in the Options pages).
+func apply_options() -> void:
+	options.apply_runtime()
+	UITheme.high_contrast = options.high_contrast
+	Quality.apply(game, options.quality)
+
+
+## Scale factor for the HUD, overlays and tip cards (the menu pages scale themselves in UIScreen.apply_layout).
+func hud_scale() -> float:
+	var vp := get_viewport().get_visible_rect().size
+	return clampf(minf(options.ui_scale, vp.y / 460.0), 0.8, 1.6)
+
+
+func _layout_screens() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	for s in screens.values():
+		if s.visible:
+			s.apply_layout(options.ui_scale, vp)
+
+
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+			_on_focus_lost()
+		NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN:
+			_on_focus_gained()
+		NOTIFICATION_WM_CLOSE_REQUEST:
+			if options != null:
+				options.save()
+
+
+## Window lost focus / Steam overlay / Deck suspend: pause the run and duck the audio.
+func _on_focus_lost() -> void:
+	if game == null or not options.pause_on_focus_loss:
+		return
+	if not _was_muted:
+		var bus := AudioServer.get_bus_index("Master")
+		if bus >= 0:
+			_was_muted = true
+			AudioServer.set_bus_mute(bus, true)
+	if game.state == "playing":
+		_auto_paused = true
+		game.set_state("paused")
+
+
+## Back in focus: unmute. The pause menu stays up so the player resumes on purpose (no surprise hits).
+func _on_focus_gained() -> void:
+	if _was_muted:
+		_was_muted = false
+		var bus := AudioServer.get_bus_index("Master")
+		if bus >= 0:
+			AudioServer.set_bus_mute(bus, false)
+	_auto_paused = false
+
+
 func _process(delta: float) -> void:
 	clock += delta
 	if game == null:
@@ -165,6 +225,7 @@ func _process(delta: float) -> void:
 	hud.visible = playing
 	overlays.visible = playing
 	_apply_safe_area()
+	_layout_screens()
 	if playing:
 		hud.frame(delta)
 		overlays.frame(delta)
@@ -184,14 +245,17 @@ func _apply_safe_area() -> void:
 
 func _on_mode_changed(m: String) -> void:
 	if game.state == "playing":
-		add_message("Controls: %s" % {"keyboard": "KEYBOARD + MOUSE", "gamepad": "GAMEPAD", "touch": "TOUCH"}.get(m, m), Color(0.7, 0.7, 0.5), 2.0)
+		add_message("Controls: %s" % {"keyboard": "KEYBOARD + MOUSE", "gamepad": "CONTROLLER", "touch": "TOUCH"}.get(m, m), Color(0.7, 0.7, 0.5), 2.0)
 
 
 func _update_cursor() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	var want := Input.MOUSE_MODE_VISIBLE
-	if game.state == "playing" and input and input.active_mode() == "keyboard":
+	var m: String = input.active_mode() if input else "keyboard"
+	if m == "gamepad":
+		want = Input.MOUSE_MODE_HIDDEN          # pad in use: no stray cursor (it returns the moment the mouse moves)
+	elif game.state == "playing" and m == "keyboard":
 		want = Input.MOUSE_MODE_HIDDEN
 	if Input.mouse_mode != want:
 		Input.mouse_mode = want
@@ -567,6 +631,7 @@ func _on_level_up(level: int) -> void:
 	add_message("%s leveled up! (Lv.%d)" % [_name(), level], Color(1, 0.8, 0.2))
 	hud.pop_level()
 	input.vibrate(90)
+	input.rumble("levelup")
 
 
 func _on_enemy_killed(_pos: Vector2, _kind: String, _xp: int) -> void:
@@ -576,8 +641,10 @@ func _on_enemy_killed(_pos: Vector2, _kind: String, _xp: int) -> void:
 		hud.pop_streak()
 	hud.pop_kill()
 	input.vibrate(25)
+	input.rumble("kill")
 
 
 func _on_player_damaged(amount: float) -> void:
 	hud.pop_damage()
 	input.vibrate(int(clampf(40.0 + amount * 3.0, 40.0, 220.0)))
+	input.rumble("damage", 0.6 + amount / 30.0)

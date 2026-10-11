@@ -210,16 +210,26 @@ func _build_shade() -> ImageTexture:
 func _build_occluders() -> void:
 	## Wall runs per row. Wall tiles with no floor in their 8-neighbourhood are interior and skipped
 	## (light can never reach them), which cuts the occluder count a lot in thick wall masses.
+	## Horizontal runs that repeat on consecutive rows are merged into one taller rectangle (1-tile-wide vertical
+	## walls used to cost one occluder per row), which roughly halves the occluder count the light has to cull.
 	var n := WorldMap.CHUNK
-	for ty in n:
-		var run_start := -1
-		for tx in range(n + 1):
-			var is_wall: bool = tx < n and _t(tx, ty) == WorldMap.WALL and _touches_floor(tx, ty)
-			if is_wall and run_start < 0:
-				run_start = tx
-			elif not is_wall and run_start >= 0:
-				_add_occluder(Rect2(run_start * TILE, ty * TILE, (tx - run_start) * TILE, TILE))
-				run_start = -1
+	var active := {}                      # Vector2i(x0, x1) -> first row of the open rectangle
+	for ty in range(n + 1):
+		var next_active := {}
+		if ty < n:
+			var run_start := -1
+			for tx in range(n + 1):
+				var is_wall: bool = tx < n and _t(tx, ty) == WorldMap.WALL and _touches_floor(tx, ty)
+				if is_wall and run_start < 0:
+					run_start = tx
+				elif not is_wall and run_start >= 0:
+					var key := Vector2i(run_start, tx)
+					next_active[key] = active.get(key, ty)
+					run_start = -1
+		for key in active:
+			if not next_active.has(key):
+				_add_occluder(Rect2(key.x * TILE, active[key] * TILE, (key.y - key.x) * TILE, (ty - active[key]) * TILE))
+		active = next_active
 
 
 func _touches_floor(tx: int, ty: int) -> bool:

@@ -4,10 +4,14 @@ extends UIScreen
 ##             gamepad ("press a key / button" capture, conflicts swap, reset to defaults).
 ##   TOUCH CONTROLS: button size, opacity, left-handed mirror, haptics, with a live layout preview.
 
+const Platform = preload("res://scripts/platform/platform.gd")
+
 var menu := MenuList.new()
+var display_menu := MenuList.new()
+var pad_menu := MenuList.new()
 var touch_menu := MenuList.new()
 var return_to := "title"
-var section := "main"                 # "main" | "controls" | "touch"
+var section := "main"                 # "main" | "display" | "gamepad" | "controls" | "touch"
 
 # controls page
 var device := "keyboard"              # which binding table is shown / edited
@@ -22,23 +26,49 @@ var _back_rect := Rect2()
 
 func _on_bound() -> void:
 	var o: GameOptions = ui.options
+	var pct := func(v: float) -> String: return "%d%%" % int(round(v * 100.0))
 	menu.row_h = 38.0
 	menu.add_slider("Music Volume", func(): return o.music_volume, func(v): o.music_volume = v)
 	menu.add_slider("SFX Volume", func(): return o.sfx_volume, func(v): o.sfx_volume = v)
 	menu.add_slider("Brightness", func(): return o.brightness, func(v): o.brightness = v)
 	menu.add_slider("Headlamp", func(): return o.headlamp_brightness, func(v): o.headlamp_brightness = v, 0.1, 1.0)
 	menu.add_toggle("Tips", func(): return o.tips_enabled, func(_d): o.tips_enabled = not o.tips_enabled)
+	menu.add_button("[ DISPLAY & PERFORMANCE ]", func(): _open_section("display"))
 	menu.add_button("[ CONTROLS ]", func(): _open_section("controls"))
-	menu.add_button("[ TOUCH CONTROLS ]", func(): _open_section("touch"))
+	menu.add_button("[ CONTROLLER ]", func(): _open_section("gamepad"))
+	if OS.has_feature("mobile"):
+		menu.add_button("[ TOUCH CONTROLS ]", func(): _open_section("touch"))
 	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", return_to))
 	menu.add_button("[ REPLAY TIPS ]", _replay_tips)
-	if not OS.has_feature("mobile"):
-		menu.add_choice("Resolution", func(): return "%dx%d" % [GameOptions.RESOLUTIONS[o.res_index].x, GameOptions.RESOLUTIONS[o.res_index].y], _cycle_res)
-		menu.add_toggle("Fullscreen", func(): return o.fullscreen, _toggle_fullscreen)
 	menu.add_button("[ BACK ]", _back)
 
+	display_menu.row_h = 38.0
+	var scale := display_menu.add_slider("UI Scale", func(): return o.ui_scale, _set_scale, 0.8, 1.5, 0.05)
+	scale["fmt"] = pct
+	display_menu.add_toggle("High Contrast Text", func(): return o.high_contrast, _tog_contrast)
+	display_menu.add_choice("Quality", func(): return GameOptions.QUALITY_NAMES[o.quality], _cycle_quality)
+	display_menu.add_choice("Frame Limit", _fps_text, _cycle_fps)
+	display_menu.add_toggle("VSync", func(): return o.vsync, _tog_vsync)
+	display_menu.add_toggle("Auto-Pause", func(): return o.pause_on_focus_loss, func(_d): o.pause_on_focus_loss = not o.pause_on_focus_loss)
+	if not OS.has_feature("mobile"):
+		if not Platform.is_deck_like():
+			display_menu.add_choice("Resolution", func(): return "%dx%d" % [GameOptions.RESOLUTIONS[o.res_index].x, GameOptions.RESOLUTIONS[o.res_index].y], _cycle_res)
+		display_menu.add_toggle("Fullscreen", func(): return o.fullscreen, _toggle_fullscreen)
+	display_menu.add_button("[ BACK ]", func(): _open_section("main"))
+
+	pad_menu.row_h = 38.0
+	pad_menu.add_toggle("Rumble", func(): return o.rumble, _tog_rumble)
+	var rs := pad_menu.add_slider("Rumble Strength", func(): return o.rumble_strength, _set_rumble_strength, 0.1, 1.0, 0.1)
+	rs["fmt"] = pct
+	var dz := pad_menu.add_slider("Stick Dead Zone", func(): return o.pad_deadzone, func(v): o.pad_deadzone = v, 0.05, 0.4, 0.05)
+	dz["fmt"] = pct
+	var aim := pad_menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
+	aim["enabled"] = func(): return ui.difficulty < 3
+	pad_menu.add_toggle("System Keyboard", func(): return o.steam_keyboard, func(_d): o.steam_keyboard = not o.steam_keyboard)
+	pad_menu.add_button("[ BUTTON LAYOUT ]", func(): _open_section("controls"))
+	pad_menu.add_button("[ BACK ]", func(): _open_section("main"))
+
 	touch_menu.row_h = 40.0
-	var pct := func(v: float) -> String: return "%d%%" % int(round(v * 100.0))
 	var s_size := touch_menu.add_slider("Button Size", func(): return o.touch_size, func(v): o.touch_size = v, 0.6, 1.5, 0.05)
 	s_size["fmt"] = pct
 	var s_op := touch_menu.add_slider("Opacity", func(): return o.touch_opacity, func(v): o.touch_opacity = v, 0.2, 1.0, 0.05)
@@ -49,6 +79,63 @@ func _on_bound() -> void:
 	touch_menu.add_button("[ BACK ]", func(): _open_section("main"))
 	ui.input.binding_captured.connect(_on_captured)
 	o.changed.connect(_rebuild_rows)
+
+
+func _set_scale(v: float) -> void:
+	ui.options.ui_scale = v
+	ui.apply_options()
+
+
+func _tog_contrast(_d: int) -> void:
+	ui.options.high_contrast = not ui.options.high_contrast
+	ui.apply_options()
+
+
+func _tog_vsync(_d: int) -> void:
+	ui.options.vsync = not ui.options.vsync
+	ui.apply_options()
+
+
+func _tog_rumble(_d: int) -> void:
+	ui.options.rumble = not ui.options.rumble
+	ui.input.rumble("damage")
+
+
+func _set_rumble_strength(v: float) -> void:
+	ui.options.rumble_strength = v
+	ui.input.rumble("kill")
+
+
+func _aim_text() -> String:
+	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
+
+
+func _aim_color() -> Color:
+	if ui.difficulty >= 3:
+		return Color(0.6, 0.6, 0.6)
+	return Color(0.3, 1, 0.3) if ui.options.aim_assist else Color(1, 0.3, 0.3)
+
+
+func _toggle_aim(_d: int) -> void:
+	if ui.difficulty < 3:
+		ui.options.aim_assist = not ui.options.aim_assist
+
+
+func _cycle_quality(d: int) -> void:
+	var o: GameOptions = ui.options
+	o.quality = posmod(o.quality + d, GameOptions.QUALITY_NAMES.size())
+	ui.apply_options()
+
+
+func _fps_text() -> String:
+	var c: int = ui.options.fps_cap()
+	return "Uncapped" if c == 0 else ("%d FPS" % c) + ("  (Deck 40 Hz)" if c == 40 else "")
+
+
+func _cycle_fps(d: int) -> void:
+	var o: GameOptions = ui.options
+	o.fps_cap_index = posmod(o.fps_cap_index + d, GameOptions.FPS_CAPS.size())
+	ui.apply_options()
 
 
 func _toggle_lefty(_d: int) -> void:
@@ -98,18 +185,27 @@ func _open_section(s: String) -> void:
 	csel = 0
 	cscroll = 0
 	_msg = ""
-	var m := menu if s == "main" else touch_menu
-	m.enter_t = 0.0
-	m.hl_y = -1.0
-	if s == "main":
+	var m := _menu_for(s)
+	if m != null:
+		m.enter_t = 0.0
+		m.hl_y = -1.0
 		m.sel = 0
-	elif s == "touch":
-		m.sel = 0
+		m.scroll = 0
 	_rebuild_rows()
+
+
+func _menu_for(s: String) -> MenuList:
+	match s:
+		"main": return menu
+		"display": return display_menu
+		"gamepad": return pad_menu
+		"touch": return touch_menu
+	return null
 
 
 func _on_open(arg) -> void:
 	return_to = arg if arg is String else "title"
+	device = "gamepad" if ui.input.active_mode() == "gamepad" else "keyboard"
 	_open_section("main")
 
 
@@ -126,11 +222,15 @@ func _on_captured(_dev: String, _act: String, message: String) -> void:
 
 func _rebuild_rows() -> void:
 	_crows.clear()
-	_crows.append({"kind": "scheme"})
-	_crows.append({"kind": "device"})
+	var pad_in_use: bool = ui.input.active_mode() == "gamepad"
+	if not pad_in_use:                     # a controller player never sees the keyboard tables
+		_crows.append({"kind": "scheme"})
+		_crows.append({"kind": "device"})
 	for a in GameInput.ACTIONS:
 		if device == "gamepad" and int(a.pad) == -2:
 			continue
+		if device == "keyboard" and int(a.key) == 0 and int(a.pad) >= 16:
+			continue                       # back grips are pad-only
 		_crows.append({"kind": "bind", "id": a.id, "label": a.label})
 	_crows.append({"kind": "reset"})
 	_crows.append({"kind": "back"})
@@ -155,8 +255,8 @@ func _activate_row(i: int) -> void:
 			_rebuild_rows()
 		"bind":
 			ui.input.begin_capture(device, r.id)
-			_flash("Press a %s for %s   (ESC cancels)" % ["key" if device == "keyboard" else "controller button",
-				String(r.label).to_upper()])
+			_flash(ui.input.hint("Press a key for %s   (Esc cancels)" % String(r.label).to_upper(),
+				"Press a button for %s   (Menu cancels)" % String(r.label).to_upper()))
 		"reset":
 			ui.input.reset_bindings(device)
 			_flash("%s bindings reset to defaults" % device.to_upper())
@@ -192,7 +292,7 @@ func handle_input(inp: GameInput, _d: float) -> void:
 		if inp.just("ui_back") or inp.just("pause"):
 			_open_section("main")
 		return
-	var m := menu if section == "main" else touch_menu
+	var m := _menu_for(section)
 	if inp.just("ui_up"):
 		m.nav(-1)
 	if inp.just("ui_down"):
@@ -216,7 +316,7 @@ func on_pointer_move(p: Vector2) -> void:
 			if e[1].has_point(p):
 				csel = e[0]
 		return
-	(menu if section == "main" else touch_menu).pointer_move(p)
+	_menu_for(section).pointer_move(p)
 
 
 func on_pointer_down(p: Vector2) -> void:
@@ -234,17 +334,17 @@ func on_pointer_down(p: Vector2) -> void:
 					_activate_row(csel)
 				return
 		return
-	(menu if section == "main" else touch_menu).pointer_down(p)
+	_menu_for(section).pointer_down(p)
 
 
 func on_pointer_drag(p: Vector2) -> void:
 	if section != "controls":
-		(menu if section == "main" else touch_menu).pointer_drag(p)
+		_menu_for(section).pointer_drag(p)
 
 
 func on_pointer_up(_p: Vector2) -> void:
 	if section != "controls":
-		(menu if section == "main" else touch_menu).pointer_up()
+		_menu_for(section).pointer_up()
 
 
 func frame(delta: float) -> void:
@@ -272,11 +372,15 @@ func _draw() -> void:
 		"touch":
 			_draw_touch(w, h, a)
 		_:
-			var total := menu.total_height()
+			var m := _menu_for(section)
+			m.max_rows = m.rows_for(h - 150.0)
+			var total := m.total_height()
 			var top := floorf((h - total) * 0.5) + 14.0
-			UITheme.head(self, "OPTIONS", 0, maxf(10.0, top - 62) - (1.0 - a) * 12, 40, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
-			menu.draw(self, w * 0.5, top, dt, ui.clock)
-			UITheme.text(self, "LEFT/RIGHT adjust    ESC back", 0, h - 26, 13, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+			var title: String = {"main": "OPTIONS", "display": "DISPLAY & PERFORMANCE", "gamepad": "CONTROLLER"}.get(section, "OPTIONS")
+			UITheme.head(self, title, 0, maxf(10.0, top - 62) - (1.0 - a) * 12, 40, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+			m.draw(self, w * 0.5, top, dt, ui.clock)
+			UITheme.text(self, ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ESC back", "D-Pad select    Left/Right adjust    A confirm    B back",
+				"TAP a row    tap the sides to adjust"), 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 	if _msg != "":
 		UITheme.text(self, _msg, 0, h - 52, 15, Color(1, 0.9, 0.4, clampf(_msg_t, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.4)
@@ -349,14 +453,12 @@ func _draw_controls(w: float, h: float, a: float) -> void:
 		UITheme.text(self, "^", 0, top - 16, 14, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_CENTER, w)
 	if cscroll + vis < _crows.size():
 		UITheme.text(self, "v", 0, y, 14, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_CENTER, w)
-	var hint := "UP/DOWN select    ENTER rebind    LEFT/RIGHT change    ESC back"
-	if inp.active_mode() == "gamepad":
-		hint = "D-PAD select    A rebind    B back    (while rebinding: START cancels)"
-	elif inp.active_mode() == "touch":
-		hint = "TAP a row to rebind    tap the arrows to change"
+	var hint: String = inp.hint("UP/DOWN select    ENTER rebind    LEFT/RIGHT change    ESC back",
+		"D-Pad select    A rebind    B back    (while rebinding: Menu cancels)", "TAP a row to rebind    tap the arrows to change")
 	if inp.capturing():
-		hint = "Waiting for input...  ESC cancels.  If a key is already used the two actions swap."
-	UITheme.text(self, hint, 0, h - 26, 13, Color(0.5, 0.47, 0.32, 0.9), HORIZONTAL_ALIGNMENT_CENTER, w)
+		hint = inp.hint("Waiting for input...  Esc cancels.  If a key is already used the two actions swap.",
+			"Press the new button...  Menu cancels.  If a button is already used the two actions swap.")
+	UITheme.text(self, hint, 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 
 
 func _draw_touch(w: float, h: float, a: float) -> void:
@@ -389,11 +491,11 @@ func _draw_touch(w: float, h: float, a: float) -> void:
 		var cc: Color = b.color
 		draw_circle(c2, b.r * sc, Color(cc, minf(1.0, 0.3 * f)))
 		draw_arc(c2, b.r * sc, 0, TAU, 24, Color(cc, minf(1.0, 0.95 * f)), 1.5)
-		var fs := maxi(7, int(b.r * sc * 0.5))
+		var fs := maxi(9, int(b.r * sc * 0.5))
 		var tw := font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		if tw > b.r * sc * 1.7:
-			fs = maxi(6, int(fs * b.r * sc * 1.7 / tw))
+			fs = maxi(9, int(fs * b.r * sc * 1.7 / tw))
 			tw = font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		draw_string(font, c2 + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, minf(1.0, 0.95 * f)))
-	UITheme.text(self, "PREVIEW", pr.position.x + 8, pr.position.y + 4, 11, Color(0.6, 0.6, 0.5, 0.7))
-	UITheme.text(self, "Sticks float inside their half of the screen. Keep thumbs inside the safe area.", 0, h - 26, 13, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, "PREVIEW", pr.position.x + 8, pr.position.y + 4, 12, Color(0.7, 0.7, 0.6, 0.8))
+	UITheme.text(self, "Sticks float inside their half of the screen. Keep thumbs inside the safe area.", 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)

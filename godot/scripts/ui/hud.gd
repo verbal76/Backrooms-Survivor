@@ -2,10 +2,10 @@ extends Control
 ## In-game HUD (drawHud / drawMessages / minimap / crosshair / sanity + low-health screen effects).
 ## Pure screen-space drawing on a CanvasLayer; reads everything from game.player and the optional systems.
 
-const BAR_W := 214.0
+const BAR_W := 236.0
 const BAR_H := 20.0
 const BAR_GAP := 5.0
-const FS := 13
+const FS := 14
 const MINI_SIZE := 124.0
 
 var ui
@@ -107,12 +107,17 @@ func _bar(x: float, y: float, key: String, pct: float, col: Color, label: String
 func _draw() -> void:
 	if game == null or game.player == null:
 		return
-	var w := size.x
-	var h := size.y
+	var w0 := size.x
+	var h0 := size.y
 	var p = game.player
 	var mode: String = game.input.active_mode() if game.input else "keyboard"
 	_mode = mode
-	_draw_screen_fx(w, h, p)
+	_draw_screen_fx(w0, h0, p)               # full-screen effects ignore the UI scale
+	# everything below is laid out in a canvas of (size / s) px and magnified by s (Options > UI Scale)
+	var s: float = ui.hud_scale()
+	var w := w0 / s
+	var h := h0 / s
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	_draw_left_panel(p, mode)
 	if mode != "touch":
 		_draw_bottom_left(h, p)       # on touch the counts live on the buttons
@@ -121,13 +126,14 @@ func _draw() -> void:
 	_draw_minimap(w, h, p, mode)
 	_draw_banners(w, h, p)
 	_draw_messages(w, h)
+	if mode != "touch":
+		var m := "CONTROLLER" if mode == "gamepad" else mode.to_upper()
+		UITheme.text(self, m, 12, h - 20, 12, Color(0.6, 0.6, 0.6, 0.45))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if mode == "keyboard" and game.state == "playing":
 		_draw_crosshair()
 	if ui.intro_t > 0.0:
-		_draw_intro(w, h)
-	if mode != "touch":
-		var m := mode.to_upper()
-		UITheme.text(self, m, 12, h - 20, 11, Color(0.6, 0.6, 0.6, 0.35))
+		_draw_intro(w0, h0)
 
 
 func _draw_left_panel(p, _m: String) -> void:
@@ -173,14 +179,22 @@ func _draw_left_panel(p, _m: String) -> void:
 			keys[i] = "[%s] " % inp.key_name(inp.key_of(acts[i]))
 	elif _mode == "gamepad":
 		for i in 3:
-			keys[i] = "[%s] " % inp.pad_name(inp.pad_of(acts[i]))
-	var qs := [["%sH2O: %d" % [keys[0], p.almond_water], p.almond_water, Color(0.3, 0.8, 1)],
-		["%sMED: %d" % [keys[1], p.bandages], p.bandages, Color(0.3, 1, 0.3)],
-		["%sFOOD: %d" % [keys[2], p.food], p.food, Color(0.95, 0.75, 0.3)]]
+			keys[i] = "[%s] " % inp.pad_short(inp.pad_of(acts[i]))
+	var qs := [["%sH2O %d" % [keys[0], p.almond_water], p.almond_water, Color(0.3, 0.8, 1)],
+		["%sMED %d" % [keys[1], p.bandages], p.bandages, Color(0.3, 1, 0.3)],
+		["%sFOOD %d" % [keys[2], p.food], p.food, Color(0.95, 0.75, 0.3)]]
+	var qtotal := 0.0
+	for q in qs:
+		qtotal += UITheme.text_w(q[0], FS)
+	var qfs := FS
+	var qgap := 12.0
+	if qtotal + qgap * 2.0 > BAR_W:
+		qfs = UITheme.MIN_FS
+		qgap = 8.0
 	var qx := x
 	for q in qs:
 		var qc: Color = q[2] if q[1] > 0 else Color(0.45, 0.45, 0.45)
-		qx += UITheme.text(self, q[0], qx, y, FS, qc) + 14.0
+		qx += UITheme.text(self, q[0], qx, y, qfs, qc) + qgap
 
 
 func _draw_bottom_left(h: float, p) -> void:
@@ -230,7 +244,7 @@ func _draw_right_panel(w: float, p) -> void:
 	UITheme.panel(self, Rect2(x, y + 78, 78, 9), Color(0.15, 0.15, 0.15, 0.9), Color(0, 0, 0, 0.5), 3, 1)
 	if nz > 0.0:
 		UITheme.panel(self, Rect2(x, y + 78, maxf(3.0, 78 * nz), 9), Color(nz, 1.0 - nz * 0.8, 0.1), Color(0, 0, 0, 0), 3)
-	UITheme.text(self, "NOISE", x + 84, y + 74, 11, Color(0.7, 0.7, 0.7))
+	UITheme.text(self, "NOISE", x + 84, y + 74, 12, Color(0.7, 0.7, 0.7))
 	UITheme.text(self, "BOMB x%d" % ui._bomb_count(), x, y + 92, FS, Color(1, 0.5, 0.1) if ui._bomb_count() > 0 else Color(0.5, 0.4, 0.35))
 	UITheme.text(self, UITheme.DIFF_NAMES[ui.difficulty - 1], x + 80, y + 92, FS, UITheme.DIFF_COLORS[ui.difficulty - 1])
 
@@ -251,8 +265,8 @@ func _draw_effects(w: float) -> void:
 		var y := ey + 6 + i * 18
 		draw_rect(Rect2(ex + 4, y, 100, 12), c * 0.3)
 		draw_rect(Rect2(ex + 4, y, 100 * pct, 12), Color(c, 0.7))
-		UITheme.text(self, str(e.get("text", "")), ex + 8, y - 1, 11, Color.WHITE)
-		UITheme.text(self, "%ds" % int(rem), ex + 110, y - 1, 11, Color(0.7, 0.7, 0.7))
+		UITheme.text(self, str(e.get("text", "")), ex + 8, y - 2, 12, Color.WHITE)
+		UITheme.text(self, "%ds" % int(rem), ex + 110, y - 2, 12, Color(0.7, 0.7, 0.7))
 		if rem < 5.0 and sin(_t * 8.0) > 0.0:
 			draw_rect(Rect2(ex + 4, y, 100, 12), Color(1, 1, 0, 0.3))
 

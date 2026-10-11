@@ -45,6 +45,8 @@ func handle_input(inp: GameInput, _d: float) -> void:
 		menu.activate()
 	elif inp.just("ui_back"):
 		ui.back_to_title()
+	elif inp.just("pad_start"):
+		ui.start_game()
 
 
 func on_pointer_move(p: Vector2) -> void:
@@ -103,4 +105,6 @@ func _draw() -> void:
 
 	menu.draw(self, w * 0.5, top + 212.0, dt, ui.clock)
 	UITheme.text(self, "%s was lost in the Backrooms." % (ui.player_name if ui.player_name != "" else "Subject"), 0,
-		top + 212.0 + menu.total_height() + 14, 14, Color(0.5, 0.5, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+		top + 212.0 + menu.total_height() + 14, 14, Color(0.6, 0.6, 0.6, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, ui.input.hint("UP/DOWN select    ENTER confirm    R try again", "D-Pad select    A confirm    Menu try again    B main menu",
+		"TAP to select"), 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)

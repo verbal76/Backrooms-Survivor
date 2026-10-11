@@ -142,9 +142,7 @@ func _draw() -> void:
 	button_rect(_buy_rect, "BUY" if lvl2 < int(def2.max) else "MAXED", affordable and _buy_rect.has_point(pointer) or (affordable and pointer.x < 0),
 		20, Color(1, 0.85, 0.2) if affordable else Color(0.5, 0.4, 0.3))
 	button_rect(_back_rect, "BACK", _back_rect.has_point(pointer), 20)
-	var hint := "UP/DOWN select    ENTER buy    ESC back"
-	if ui.input.active_mode() == "gamepad":
-		hint = "D-PAD select    A buy    B back"
-	UITheme.text(self, hint, 0, h - 22, 12, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint: String = ui.input.hint("UP/DOWN select    ENTER buy    ESC back", "D-Pad select    A buy    B back", "TAP to select    tap BUY")
+	UITheme.text(self, hint, 0, h - 22, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.1), 3.0)
 	UITheme.vignette(self, size, 0.45)
