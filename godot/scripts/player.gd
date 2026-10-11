@@ -69,6 +69,10 @@ var bandages: int = S.bandages
 var food: int = S.food
 var batteries: int = S.batteries
 var headlamp_on := true
+# per-run multipliers from game.ui.run_mods (difficulty, perks, meta upgrades)
+var sanity_drain_mult := 1.0
+var hydration_drain_mult := 1.0
+var sprint_cost_mult := 1.0
 
 var current_streak := 0
 var best_run_streak := 0
@@ -108,13 +112,13 @@ func step(dt: float, input_dir: Vector2, want_sprint: bool, aim_world: Vector2, 
 		_try_move(vel * dt)
 
 	if sprinting and moving:
-		stamina -= S.sprint_cost * dt
+		stamina -= S.sprint_cost * sprint_cost_mult * dt
 	else:
 		stamina = minf(max_stamina, stamina + S.stamina_regen * dt)
 	stamina = maxf(0.0, stamina)
 
 	# sanity drains faster in the dark, recovers in light
-	var drain: float = S.sanity_drain * (1.0 + (1.0 - light_level) * 2.0)
+	var drain: float = S.sanity_drain * sanity_drain_mult * (1.0 + (1.0 - light_level) * 2.0)
 	if hydration <= 0.0:
 		drain *= 2.0
 	sanity -= drain * dt
@@ -122,7 +126,7 @@ func step(dt: float, input_dir: Vector2, want_sprint: bool, aim_world: Vector2, 
 		sanity += (light_level - S.sanity_light_min) * S.sanity_regen_mult * dt
 	sanity = clampf(sanity, 0.0, max_sanity)
 
-	hydration = maxf(0.0, hydration - S.hydration_drain * (S.hydration_sprint if sprinting else 1.0) * dt)
+	hydration = maxf(0.0, hydration - S.hydration_drain * hydration_drain_mult * (S.hydration_sprint if sprinting else 1.0) * dt)
 
 	# noise: what enemies track
 	var add: float = S.base_noise * dt

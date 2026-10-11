@@ -41,6 +41,7 @@ var systems: Array[Node] = []
 
 ## "title" | "playing" | "paused" | "perk" | "dead" | "portal"
 var state := "title"
+var day_seconds := DAY_SECONDS
 var run_time := 0.0          # seconds survived this run (pauses with the game)
 var day := 1
 var kills := 0
@@ -94,11 +95,12 @@ func _physics_process(delta: float) -> void:
 	# non-playing states are driven by the ui system (menus, pause, perk pick, death)
 	if state == "playing":
 		run_time += delta
-		day = 1 + int(run_time / DAY_SECONDS)
+		day = 1 + int(run_time / day_seconds)
 		var light: float = lighting.light_level_at_player() if lighting and lighting.has_method("light_level_at_player") else 0.3
 		var in_aim := input.aim_world if input else get_global_mouse_position()
 		player.step(delta, input.move if input else Vector2.ZERO, input.sprint if input else false,
 			in_aim, input.fire if input else false, light)
+		_apply_live_mods()
 		_stream_chunks()
 		for node in systems:
 			if node != input and node.has_method("tick"):
@@ -133,6 +135,7 @@ func start_run() -> void:
 	for node in systems:
 		if node.has_method("reset_run"):
 			node.reset_run()
+	_apply_run_mods()
 	set_state("playing")
 
 
@@ -157,6 +160,40 @@ func report_kill(tile_pos: Vector2, kind: String, xp: int) -> void:
 		if player.pending_perk_choice:
 			set_state("perk")
 	enemy_killed.emit(tile_pos, kind, xp)
+
+
+## Difficulty / progression numbers published by the ui system (see ui.gd _build_run_mods).
+var difficulty: int:
+	get: return ui.difficulty if ui else 2
+
+
+func _apply_run_mods() -> void:
+	if ui == null or ui.run_mods.is_empty():
+		return
+	var m: Dictionary = ui.run_mods
+	day_seconds = float(m.get("day_length", DAY_SECONDS))
+	if enemies and enemies.has_method("set_difficulty"):
+		enemies.set_difficulty(int(m.difficulty))
+	if lighting:
+		lighting.ambient = float(m.ambient)
+		lighting.brightness = ui.options.brightness
+		lighting.headlamp_brightness = ui.options.headlamp_brightness
+		if lighting.has_method("set_battery_max") and float(m.get("lamp_capacity", 1.0)) != 1.0:
+			lighting.set_battery_max(lighting.battery_max * float(m.lamp_capacity))
+	if weapons and weapons.get("bomb"):
+		weapons.bomb.max_count = int(m.max_bombs)
+
+
+func _apply_live_mods() -> void:
+	if ui == null or ui.run_mods.is_empty():
+		return
+	var m: Dictionary = ui.run_mods
+	player.sanity_drain_mult = float(m.get("sanity_drain", 1.0))
+	player.hydration_drain_mult = float(m.get("hydration_drain", 1.0))
+	player.sprint_cost_mult = float(m.get("sprint_cost", 1.0))
+	if lighting:
+		lighting.brightness = ui.options.brightness
+		lighting.headlamp_brightness = ui.options.headlamp_brightness
 
 
 func hitstop(seconds: float) -> void:
