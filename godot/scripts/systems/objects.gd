@@ -318,6 +318,7 @@ func _tick_items(dt: float, p: Player) -> void:
 			# light magnet: pickups slide the last stretch toward the player
 			if dist < 1.5 and it.age > 0.5 and dist > 0.05:
 				it.tile_pos += d / dist * (2.0 + (1.5 - dist) * 5.0) * dt
+				game.fx.trail(it.tile_pos * game.TILE, Color(1.0, 0.95, 0.6))
 				dist = (p.tile_pos - it.tile_pos).length()
 			if dist < Loot.PICKUP_RADIUS:
 				_collect_item(it, p)

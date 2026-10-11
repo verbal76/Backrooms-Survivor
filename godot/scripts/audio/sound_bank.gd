@@ -5,6 +5,7 @@ extends RefCounted
 ## A name that is not an exact file but a prefix (on "_" boundaries) resolves to a random member
 ## of that group, e.g. "hell_beast_attack" or "death".
 
+const SynthLib = preload("res://scripts/audio/synth.gd")
 const SOUND_DIR := "res://assets/audio/sounds"
 const MUSIC_DIR := "res://assets/audio/music"
 
@@ -47,6 +48,9 @@ static func norm(s: String) -> String:
 func scan() -> void:
 	_scan_dir(SOUND_DIR, sounds)
 	_scan_dir(MUSIC_DIR, music)
+	for kind in SynthLib.NAMES:             # procedural juice sounds (scripts/audio/synth.gd), rendered lazily
+		for v in range(1, int(SynthLib.NAMES[kind]) + 1):
+			sounds["%s_%d" % [kind, v]] = "synth:%s_%d" % [kind, v]
 
 
 func _scan_dir(dir: String, into: Dictionary) -> void:
@@ -87,7 +91,7 @@ func get_stream(key: String, pool: Dictionary = sounds) -> AudioStream:
 	if path == "":
 		return null
 	if not _cache.has(path):
-		_cache[path] = load(path)
+		_cache[path] = SynthLib.make(path.substr(6)) if path.begins_with("synth:") else load(path)
 	return _cache[path]
 
 

@@ -60,6 +60,8 @@ var kb_vel := Vector2.ZERO
 var stun := 0.0
 var facing := 0.0
 var attack_pulse := 0.0
+var squash := 0.0            # 1 -> 0 hit squash-and-stretch along hit_dir
+var hit_dir := Vector2.RIGHT
 # melee attack: wind-up (telegraph) -> strike (damage at the legs/pincers' reach) -> recover
 var reach := 1.2
 var windup := 0.3
@@ -174,6 +176,9 @@ func take_damage(amount: float, knockback_dir := Vector2.ZERO) -> void:
 		return
 	hp -= amount
 	hit_flash = HIT_FLASH_TIME
+	squash = 1.0
+	if knockback_dir != Vector2.ZERO:
+		hit_dir = knockback_dir.normalized()
 	# being shot makes the enemy aware of you
 	alert_level = maxf(alert_level, 40.0)
 	if game and game.player:
@@ -208,8 +213,7 @@ func _die(dir: Vector2) -> void:
 	hit_flash = HIT_FLASH_TIME
 	mgr.on_enemy_dead(self)
 	var big := kind == "skin stealer" or kind == "crawler"
-	game.fx.burst(position, "gib", dir)
-	game.fx.blood(position, 1.6 if big else 1.0)
+	game.fx.death_fx(position, kind, dir, big)
 	game.fx.shake(6.0 if big else 3.0, 0.2)
 	game.hitstop(0.09 if kind == "skin stealer" else 0.045)
 	_play_death_sound()
@@ -539,6 +543,7 @@ func _attack_tick(dt: float, to_p: Vector2, dist: float, can_see: bool) -> void:
 		atk_t = windup
 		atk_dir = to_p.normalized() if dist > 0.01 else Vector2.RIGHT
 		alert_pulse = 0.2
+		game.fx.attack_warning(position, windup, kind == "skin stealer" or kind == "crawler")
 	queue_redraw()
 
 
@@ -549,10 +554,13 @@ func _strike(to_p: Vector2, dist: float) -> void:
 	var pl = game.player
 	var d_now: float = (pl.tile_pos - tile_pos).length()
 	if d_now <= reach + 0.3 and Pathing.has_los(game.map, tile_pos, pl.tile_pos) and pl.invuln_time <= 0.0:
+		game.fx.note_attacker(position)
 		game.damage_player(float(dmg), position)
 		game.fx.burst(pl.position, "hit", atk_dir)
 		_play_attack_sound()
 	else:
+		if d_now > reach + 0.3 and d_now < reach + 1.8 and pl.invuln_time <= 0.0:
+			game.fx.near_miss(position)         # the player slipped out of the swing
 		game.fx.burst(position + atk_dir * reach * game.TILE, "smoke", atk_dir)   # swing and miss
 
 
@@ -567,6 +575,7 @@ func _animate(dt: float, to_p: Vector2, mv: Vector2) -> void:
 	spawn_t = minf(spawn_t + dt, 0.3)
 	hit_flash = maxf(0.0, hit_flash - dt)
 	attack_pulse = maxf(0.0, attack_pulse - dt)
+	squash = maxf(0.0, squash - dt * 7.0)
 	alert_pulse = maxf(0.0, alert_pulse - dt)
 
 	# facing: toward the player, or toward the wander goal while wandering (as in drawEnemies)
@@ -585,7 +594,8 @@ func _animate(dt: float, to_p: Vector2, mv: Vector2) -> void:
 	var pop := 1.0 + 0.30 * (hit_flash / HIT_FLASH_TIME) + 0.22 * (attack_pulse / 0.3) + 0.15 * (alert_pulse / 0.35)
 	var spawn_k := ease(spawn_t / 0.3, 0.3)
 	var s := _base_scale * bob * pop * spawn_k
-	_sprite.scale = Vector2.ONE * s
+	var sq := squash * squash * 0.22
+	_sprite.scale = Vector2(s * (1.0 + sq * (hit_dir.x * hit_dir.x - hit_dir.y * hit_dir.y)), s * (1.0 + sq * (hit_dir.y * hit_dir.y - hit_dir.x * hit_dir.x)))
 	_flash.scale = _sprite.scale
 	_flash.modulate.a = clampf(hit_flash / HIT_FLASH_TIME, 0.0, 1.0) * 0.85
 	_sprite.rotation = sin(walk_phase * 0.5) * 0.05
