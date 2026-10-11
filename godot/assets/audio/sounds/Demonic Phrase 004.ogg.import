@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bwqv6nvw66oon"
+path="res://.godot/imported/Demonic Phrase 004.ogg-d63e2b4c732128c27d0f0113b08541bd.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/Demonic Phrase 004.ogg"
+dest_files=["res://.godot/imported/Demonic Phrase 004.ogg-d63e2b4c732128c27d0f0113b08541bd.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

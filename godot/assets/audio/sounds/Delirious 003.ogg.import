@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://dyldnpqpkrfqw"
+path="res://.godot/imported/Delirious 003.ogg-fc4f30dfbf791816f0c5d6ae36e29201.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/Delirious 003.ogg"
+dest_files=["res://.godot/imported/Delirious 003.ogg-fc4f30dfbf791816f0c5d6ae36e29201.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

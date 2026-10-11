@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://ds2q0lf0hhp7y"
+path="res://.godot/imported/Gasp For Air 002.ogg-d2a54348f471541462c7769e216ce44b.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/Gasp For Air 002.ogg"
+dest_files=["res://.godot/imported/Gasp For Air 002.ogg-d2a54348f471541462c7769e216ce44b.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

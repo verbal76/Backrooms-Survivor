@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://clvvdk1byb64p"
+path="res://.godot/imported/Demonic Ritual 002.ogg-8ecb52e5635ae1b22f8e5e02a3de8699.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/Demonic Ritual 002.ogg"
+dest_files=["res://.godot/imported/Demonic Ritual 002.ogg-8ecb52e5635ae1b22f8e5e02a3de8699.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

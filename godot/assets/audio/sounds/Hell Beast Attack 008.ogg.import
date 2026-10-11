@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://diftetkx3ejr8"
+path="res://.godot/imported/Hell Beast Attack 008.ogg-b54ff7ca9bcbc63dd81127a1c9954c95.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/Hell Beast Attack 008.ogg"
+dest_files=["res://.godot/imported/Hell Beast Attack 008.ogg-b54ff7ca9bcbc63dd81127a1c9954c95.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

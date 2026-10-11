@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://b6exxsrb0loi7"
+path="res://.godot/imported/death_Hell Beast Dies 004.ogg-e2915c1f97e03739988d9aa76f0a17a8.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/death_Hell Beast Dies 004.ogg"
+dest_files=["res://.godot/imported/death_Hell Beast Dies 004.ogg-e2915c1f97e03739988d9aa76f0a17a8.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://nwjyh38sxuao"
+path="res://.godot/imported/UI_Horror Vol2 Hush Cut 60.ogg-2236a51ef7f9e78a59b9c433ae5169eb.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/audio/sounds/UI_Horror Vol2 Hush Cut 60.ogg"
+dest_files=["res://.godot/imported/UI_Horror Vol2 Hush Cut 60.ogg-2236a51ef7f9e78a59b9c433ae5169eb.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
