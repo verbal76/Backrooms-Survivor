@@ -21,6 +21,15 @@ var fullscreen := false
 var aim_assist := true
 var difficulty := 1                # 1..4 (last selected)
 var last_character := ""
+# controls (see GameInput.ACTIONS for the action ids). Only rebound entries are stored; the rest use defaults.
+var key_binds := {}                # action -> physical keycode (int)
+var pad_binds := {}                # action -> joypad code (JoyButton, or 100 = left trigger, 101 = right trigger, -1 = none)
+# touch controls
+var touch_size := 1.0              # 0.6 .. 1.5
+var touch_opacity := 0.6           # 0.2 .. 1.0
+var touch_left_handed := false     # mirror the layout
+var haptics := true                # vibrate on hits / damage (Android)
+var tips_enabled := true           # context tips (tutorial)
 
 
 func get_control_mode() -> String:
@@ -51,7 +60,9 @@ func to_dict() -> Dictionary:
 	return {"music_volume": music_volume, "sfx_volume": sfx_volume, "brightness": brightness,
 		"headlamp_brightness": headlamp_brightness, "control_mode": control_mode, "res_index": res_index,
 		"fullscreen": fullscreen, "aim_assist": aim_assist, "difficulty": difficulty,
-		"last_character": last_character}
+		"last_character": last_character, "key_binds": key_binds, "pad_binds": pad_binds,
+		"touch_size": touch_size, "touch_opacity": touch_opacity, "touch_left_handed": touch_left_handed,
+		"haptics": haptics, "tips_enabled": tips_enabled}
 
 
 func save() -> void:
@@ -77,3 +88,18 @@ func load_from_disk() -> void:
 	aim_assist = bool(d.get("aim_assist", aim_assist))
 	difficulty = clampi(int(d.get("difficulty", difficulty)), 1, 4)
 	last_character = str(d.get("last_character", last_character))
+	touch_size = clampf(float(d.get("touch_size", touch_size)), 0.6, 1.5)
+	touch_opacity = clampf(float(d.get("touch_opacity", touch_opacity)), 0.2, 1.0)
+	touch_left_handed = bool(d.get("touch_left_handed", touch_left_handed))
+	haptics = bool(d.get("haptics", haptics))
+	tips_enabled = bool(d.get("tips_enabled", tips_enabled))
+	key_binds = _int_map(d.get("key_binds", {}))
+	pad_binds = _int_map(d.get("pad_binds", {}))
+
+
+static func _int_map(v: Variant) -> Dictionary:
+	var out := {}
+	if v is Dictionary:
+		for k in v:
+			out[str(k)] = int(v[k])
+	return out

@@ -78,7 +78,7 @@ func character_count() -> int:
 func add_character(char_name: String) -> bool:
 	if characters.size() >= MAX_CHARACTERS:
 		return false
-	characters.append({"name": char_name, "profiles": new_profiles()})
+	characters.append({"name": char_name, "profiles": new_profiles(), "tips": []})
 	save()
 	return true
 
@@ -100,6 +100,31 @@ func set_active(idx: int) -> bool:
 		active_idx = idx
 		return true
 	return false
+
+
+# ---- tutorial tips seen by the active character (saved with the character) ----------------
+
+func tip_seen(id: String) -> bool:
+	if active_idx < 0 or active_idx >= characters.size():
+		return false
+	return id in characters[active_idx].get("tips", [])
+
+
+func mark_tip_seen(id: String) -> void:
+	if active_idx < 0 or active_idx >= characters.size():
+		return
+	var ch: Dictionary = characters[active_idx]
+	if not ch.has("tips"):
+		ch["tips"] = []
+	if id not in ch.tips:
+		ch.tips.append(id)
+		save()
+
+
+func reset_tips() -> void:
+	if active_idx >= 0 and active_idx < characters.size():
+		characters[active_idx]["tips"] = []
+		save()
 
 
 func active_name() -> String:
@@ -311,7 +336,9 @@ func load_save() -> void:
 	for ch in result.get("characters", []):
 		if not (ch is Dictionary) or not ch.has("name"):
 			continue
-		var c := {"name": str(ch.name), "profiles": new_profiles()}
+		var c := {"name": str(ch.name), "profiles": new_profiles(), "tips": []}
+		for t in ch.get("tips", []):
+			c.tips.append(str(t))
 		var src_profiles: Array = ch.get("profiles", [])
 		for d in mini(4, src_profiles.size()):
 			var src: Dictionary = src_profiles[d]

@@ -114,7 +114,8 @@ func _draw() -> void:
 	_mode = mode
 	_draw_screen_fx(w, h, p)
 	_draw_left_panel(p, mode)
-	_draw_bottom_left(h, p)
+	if mode != "touch":
+		_draw_bottom_left(h, p)       # on touch the counts live on the buttons
 	_draw_right_panel(w, p)
 	_draw_effects(w)
 	_draw_minimap(w, h, p, mode)
@@ -141,7 +142,7 @@ func _draw_left_panel(p, _m: String) -> void:
 	var hp: float = p.hp / maxf(p.max_hp, 1.0)
 	_bar(x + sx, y, "hp", hp, Color(1.0 - hp * 0.8, 0.15 + hp * 0.75, 0.1), "HP", "%d / %d" % [int(p.hp), int(p.max_hp)], hp < 0.3)
 	y += BAR_H + BAR_GAP
-	_bar(x, y, "st", p.stamina / maxf(p.max_stamina, 1.0), Color(0.2, 0.4, 0.9), "STAMINA", "%d" % int(p.stamina), p.stamina < 8.0 and p.sprinting)
+	_bar(x, y, "st", p.stamina / maxf(p.max_stamina, 1.0), Color(0.2, 0.4, 0.9), "STAMINA", "%d" % int(p.stamina), (p.stamina < 8.0 and p.sprinting) or (game.input != null and game.input.refused_t > 0.0))
 	y += BAR_H + BAR_GAP
 	var sn: float = p.sanity / maxf(p.max_sanity, 1.0)
 	_bar(x, y, "sn", sn, Color(0.6, 0.2, 0.8), "SANITY", "%d" % int(p.sanity), sn < 0.25)
@@ -163,22 +164,30 @@ func _draw_left_panel(p, _m: String) -> void:
 		UITheme.panel(self, r.grow(2.0 * _pop.level), Color(1, 0.9, 0.3, 0.4 * _pop.level), Color(1, 0.9, 0.3, _pop.level), 5, 2)
 	UITheme.text(self, "LV %d" % p.level, x, y + (BAR_H - UITheme.text_h(FS)) * 0.5 - 1, FS, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, BAR_W)
 	y += BAR_H + BAR_GAP + 3.0
-	# quick items
-	var keys := ["[1] ", "[2] ", "[3] "]
-	if _mode == "gamepad":
-		keys = ["[Y] ", "[X] ", "[<] "]
-	elif _mode == "touch":
-		keys = ["", "", ""]
-	UITheme.text(self, "%sH2O: %d" % [keys[0], p.almond_water], x, y, FS, Color(0.3, 0.8, 1))
-	UITheme.text(self, "%sMED: %d" % [keys[1], p.bandages], x + 76, y, FS, Color(0.3, 1, 0.3))
-	UITheme.text(self, "%sFOOD: %d" % [keys[2], p.food], x + 152, y, FS, Color(0.95, 0.75, 0.3))
+	# quick items: key / button names follow the (rebindable) bindings of the active scheme; 0 left = dimmed
+	var inp: GameInput = game.input
+	var keys := ["", "", ""]
+	var acts := ["use_water", "use_bandage", "use_food"]
+	if _mode == "keyboard":
+		for i in 3:
+			keys[i] = "[%s] " % inp.key_name(inp.key_of(acts[i]))
+	elif _mode == "gamepad":
+		for i in 3:
+			keys[i] = "[%s] " % inp.pad_name(inp.pad_of(acts[i]))
+	var qs := [["%sH2O: %d" % [keys[0], p.almond_water], p.almond_water, Color(0.3, 0.8, 1)],
+		["%sMED: %d" % [keys[1], p.bandages], p.bandages, Color(0.3, 1, 0.3)],
+		["%sFOOD: %d" % [keys[2], p.food], p.food, Color(0.95, 0.75, 0.3)]]
+	var qx := x
+	for q in qs:
+		var qc: Color = q[2] if q[1] > 0 else Color(0.45, 0.45, 0.45)
+		qx += UITheme.text(self, q[0], qx, y, FS, qc) + 14.0
 
 
 func _draw_bottom_left(h: float, p) -> void:
 	var r := Rect2(10, h - 52, 168, 34)
 	UITheme.panel(self, r, Color(0, 0, 0, 0.62), Color(0.9, 0.8, 0.2, 0.18), 6, 1)
-	UITheme.text(self, "AMMO: %d" % ui.ammo(), r.position.x + 10, r.position.y + 8, 15, Color(0.9, 0.7, 0.1))
-	UITheme.text(self, "BAT: %d" % p.batteries, r.position.x + 98, r.position.y + 8, 15, Color(0.2, 1, 0.6))
+	UITheme.text(self, "AMMO: %d" % ui.ammo(), r.position.x + 10, r.position.y + 8, 15, Color(0.9, 0.7, 0.1) if ui.ammo() > 0 else Color(0.5, 0.45, 0.35))
+	UITheme.text(self, "BAT: %d" % p.batteries, r.position.x + 98, r.position.y + 8, 15, Color(0.2, 1, 0.6) if p.batteries > 0 else Color(0.4, 0.5, 0.45))
 
 
 func _draw_right_panel(w: float, p) -> void:
@@ -190,10 +199,17 @@ func _draw_right_panel(w: float, p) -> void:
 	UITheme.text(self, "Day %d  %s" % [game.day, UITheme.fmt_time(game.run_time)], x, y, 15, Color(0.9, 0.8, 0.2))
 	var wep: Dictionary = ui.weapon_info()
 	var wcol := UITheme.color_of(wep.get("color", Color.WHITE))
+	var why: String = ui.attack_state()
+	if why != "":
+		wcol = wcol.lerp(Color(0.4, 0.4, 0.4), 0.7)          # can't attack right now: dim the weapon
 	var wpop: float = _pop.weapon
 	var wfs := 15 + int(wpop * 12.0)
 	UITheme.text(self, String(wep.get("name", "?")).to_upper(), x, y + 20 - wpop * 4.0, wfs, wcol)
-	if wep.get("type", "melee") == "ranged":
+	if why == "stamina":
+		UITheme.text(self, "NO STAMINA", x, y + 40, FS, Color(1, 0.5, 0.2, 0.7 + 0.3 * sin(_t * 12.0)))
+	elif why == "ammo":
+		UITheme.text(self, "NO AMMO", x, y + 40, FS, Color(1, 0.3, 0.2, 0.7 + 0.3 * sin(_t * 12.0)))
+	elif wep.get("type", "melee") == "ranged":
 		UITheme.text(self, "AMMO: %d" % ui.ammo(), x, y + 40, FS, Color(0.9, 0.7, 0.1))
 	else:
 		UITheme.text(self, "MELEE", x, y + 40, FS, Color(0.6, 0.6, 0.6))
@@ -215,7 +231,7 @@ func _draw_right_panel(w: float, p) -> void:
 	if nz > 0.0:
 		UITheme.panel(self, Rect2(x, y + 78, maxf(3.0, 78 * nz), 9), Color(nz, 1.0 - nz * 0.8, 0.1), Color(0, 0, 0, 0), 3)
 	UITheme.text(self, "NOISE", x + 84, y + 74, 11, Color(0.7, 0.7, 0.7))
-	UITheme.text(self, "BOMB x%d" % ui._bomb_count(), x, y + 92, FS, Color(1, 0.5, 0.1))
+	UITheme.text(self, "BOMB x%d" % ui._bomb_count(), x, y + 92, FS, Color(1, 0.5, 0.1) if ui._bomb_count() > 0 else Color(0.5, 0.4, 0.35))
 	UITheme.text(self, UITheme.DIFF_NAMES[ui.difficulty - 1], x + 80, y + 92, FS, UITheme.DIFF_COLORS[ui.difficulty - 1])
 
 
@@ -246,6 +262,8 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 	var pos := Vector2(w - s - 14.0, h - s - 14.0)
 	if mode == "touch":
 		pos = Vector2(14.0, 232.0)
+		if game.input.opts().touch_left_handed:
+			pos = Vector2(w - s - 14.0, 150.0)     # the mirrored button cluster occupies the left edge
 	var r := Rect2(pos, Vector2(s, s))
 	UITheme.panel(self, r.grow(3), Color(0, 0, 0, 0.8), Color(0.4, 0.35, 0.2, 0.8), 5, 1)
 	_mini.draw(self, r, game.player.tile_pos, 0.95)

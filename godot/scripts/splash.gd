@@ -3,9 +3,9 @@ extends CanvasLayer
 ## Replace assets/branding/studio_logo.png to change the emblem (no code change needed).
 
 const LOGO := preload("res://assets/branding/studio_logo.png")
-const FADE_IN := 0.5
-const HOLD := 1.4
-const FADE_OUT := 0.6
+const FADE_IN := 0.3
+const HOLD := 0.8
+const FADE_OUT := 0.35
 
 var _bg: ColorRect
 var _logo: TextureRect
@@ -14,6 +14,7 @@ var _t := 0.0
 
 func _ready() -> void:
 	layer = 100
+	add_to_group("splash")       # the intro story waits for the splash to finish
 	_bg = ColorRect.new()
 	_bg.color = Color.BLACK
 	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)

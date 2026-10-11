@@ -32,6 +32,7 @@ func _on_bound() -> void:
 	up["label_fn"] = func(): return "[ UPGRADES ]  (%d Tokens)" % ui.progression.profile(ui.difficulty).tokens
 	var ch := menu.add_button("", func(): ui.show_screen("charselect"))
 	ch["label_fn"] = func(): return "[ CHARACTER: %s ]" % ui.progression.active_name().to_upper()
+	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", "title"))
 	menu.add_button("[ OPTIONS ]", func(): ui.show_screen("options", "title"))
 	menu.add_button("[ EXIT ]", func(): get_tree().quit(), Color(1, 0.4, 0.3))
 	menu.sel = 6
