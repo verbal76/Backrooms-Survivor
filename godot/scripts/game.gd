@@ -84,6 +84,7 @@ func _ready() -> void:
 	if ui == null:        # no menu system yet: start straight away
 		set_state("playing")
 	_stream_chunks()
+	add_child(preload("res://scripts/splash.gd").new())   # studio splash over everything
 
 
 func _physics_process(delta: float) -> void:
