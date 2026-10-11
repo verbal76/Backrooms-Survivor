@@ -245,12 +245,25 @@ func _finish_capture(msg: String) -> void:
 	binding_captured.emit(dev, act, msg)
 
 
+var _key_names := {}
+
+
 func key_name(k: int) -> String:
 	if k <= 0:
 		return "None"
-	var kc: int = DisplayServer.keyboard_get_keycode_from_physical(k as Key)
-	var n := OS.get_keycode_string((kc if kc > 0 else k) as Key)
-	return n if n != "" else "Key %d" % k
+	if _key_names.has(k):
+		return _key_names[k]
+	var kc := k
+	# layout-aware label only where the display server supports it (not headless/Android: it errors every call)
+	if OS.has_feature("windows") or OS.has_feature("macos") or OS.has_feature("linuxbsd"):
+		if DisplayServer.get_name() != "headless":
+			var m: int = DisplayServer.keyboard_get_keycode_from_physical(k as Key)
+			if m > 0:
+				kc = m
+	var n := OS.get_keycode_string(kc as Key)
+	var out: String = n if n != "" else "Key %d" % k
+	_key_names[k] = out
+	return out
 
 
 func pad_name(c: int) -> String:
