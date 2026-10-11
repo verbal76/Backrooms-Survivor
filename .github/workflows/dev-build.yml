@@ -107,7 +107,12 @@ jobs:
           EOF
           sed -i "s/^version\/code=.*/version\/code=${{ github.run_number }}/" export_presets.cfg
           mkdir -p build/android
-          godot --headless --export-debug "Android Dev" build/android/BackroomsSurvivor-dev.apk
+          ls ~/.local/share/godot/export_templates/4.3.stable | grep -i android || echo "NO android templates"
+          ls "$JH/bin" | tr '\n' ' '; echo
+          cat ~/.config/godot/editor_settings-4.3.tres
+          godot --headless --verbose --export-debug "Android Dev" build/android/BackroomsSurvivor-dev.apk 2>&1 | tee /tmp/android-export.log | tail -40 || true
+          grep -in "valid\|missing\|not found\|error" /tmp/android-export.log | head -40 || true
+          test -f build/android/BackroomsSurvivor-dev.apk
           cp build/android/BackroomsSurvivor-dev.apk build/out/
 
       - uses: actions/upload-artifact@v4
