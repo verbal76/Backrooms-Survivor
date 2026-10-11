@@ -5,6 +5,7 @@ extends RefCounted
 
 const GOLD := Color(0.9, 0.8, 0.2)
 const GOLD_BRIGHT := Color(1.0, 0.9, 0.3)
+const HINT := Color(0.82, 0.79, 0.58)
 const GOLD_DIM := Color(0.5, 0.45, 0.2)
 const TEXT := Color(0.8, 0.8, 0.8)
 const TEXT_DIM := Color(0.6, 0.6, 0.6)
@@ -19,6 +20,12 @@ const TERM_BRIGHT := Color(0.2, 1.0, 0.2)
 const TERM_DIM := Color(0.0, 0.45, 0.0)
 const DIFF_COLORS := [Color(0.3, 1, 0.3), Color(1, 0.9, 0.3), Color(1, 0.5, 0.2), Color(1, 0.2, 0.2)]
 const DIFF_NAMES := ["Easy", "Normal", "Getting Worse", "Hell"]
+
+## Smallest text drawn anywhere, in canvas px. At 1280x800 (stretch ~1.11) 12 canvas px is ~13 real px, which is
+## the floor for the Deck's 7" panel (Steam Deck Verified asks for >= 9 px, we stay clearly above it).
+const MIN_FS := 12
+## Options > High Contrast: brighter + bolder text (set by ui.gd).
+static var high_contrast := false
 
 static var _title: Font
 static var _body: Font
@@ -62,11 +69,28 @@ static func text(ci: CanvasItem, s: String, x: float, y: float, size: int, col: 
 		align: int = HORIZONTAL_ALIGNMENT_LEFT, width: float = -1.0, font: Font = null, shadow := true) -> float:
 	if font == null:
 		font = body_font()
+	size = maxi(size, MIN_FS)
+	col = legible(col, size)
 	var base := y + font.get_ascent(size)
 	if shadow:
-		ci.draw_string(font, Vector2(x + 1.0, base + 1.0), s, align, width, size, Color(0, 0, 0, col.a * 0.8))
+		if high_contrast:
+			ci.draw_string_outline(font, Vector2(x, base), s, align, width, size, 4, Color(0, 0, 0, minf(1.0, col.a)))
+		else:
+			ci.draw_string(font, Vector2(x + 1.0, base + 1.0), s, align, width, size, Color(0, 0, 0, col.a * 0.8))
 	ci.draw_string(font, Vector2(x, base), s, align, width, size, col)
 	return font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+
+
+## Small or faint text gets a little extra brightness so it stays readable on a 7" handheld screen.
+static func legible(col: Color, size: int) -> Color:
+	if high_contrast:
+		return Color(col.r, col.g, col.b, col.a).lerp(Color(1, 1, 1, col.a), 0.35) if col.a > 0.0 else col
+	if size <= 15:
+		var lum := col.r * 0.3 + col.g * 0.59 + col.b * 0.11
+		if lum < 0.65:
+			var k := 0.14
+			return Color(col.r + (1.0 - col.r) * k, col.g + (1.0 - col.g) * k, col.b + (1.0 - col.b) * k, maxf(col.a, minf(0.85, col.a + 0.15)))
+	return col
 
 
 ## Heading text in the Blackcraft face.
@@ -78,6 +102,7 @@ static func head(ci: CanvasItem, s: String, x: float, y: float, size: int, col: 
 static func text_w(s: String, size: int, font: Font = null) -> float:
 	if font == null:
 		font = body_font()
+	size = maxi(size, MIN_FS)
 	return font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 
 
@@ -88,12 +113,13 @@ static func fit(s: String, size: int, max_w: float, font: Font = null) -> int:
 	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 	if w <= max_w or w <= 0.0:
 		return size
-	return maxi(8, int(floor(size * max_w / w)))
+	return maxi(MIN_FS, int(floor(size * max_w / w)))
 
 
 static func text_h(size: int, font: Font = null) -> float:
 	if font == null:
 		font = body_font()
+	size = maxi(size, MIN_FS)
 	return font.get_height(size)
 
 
@@ -101,8 +127,13 @@ static func wrapped(ci: CanvasItem, s: String, x: float, y: float, width: float,
 		align: int = HORIZONTAL_ALIGNMENT_CENTER, font: Font = null) -> void:
 	if font == null:
 		font = body_font()
+	size = maxi(size, MIN_FS)
+	col = legible(col, size)
 	var base := y + font.get_ascent(size)
-	ci.draw_multiline_string(font, Vector2(x + 1, base + 1), s, align, width, size, -1, Color(0, 0, 0, col.a * 0.8))
+	if high_contrast:
+		ci.draw_multiline_string_outline(font, Vector2(x, base), s, align, width, size, -1, 4, Color(0, 0, 0, col.a))
+	else:
+		ci.draw_multiline_string(font, Vector2(x + 1, base + 1), s, align, width, size, -1, Color(0, 0, 0, col.a * 0.8))
 	ci.draw_multiline_string(font, Vector2(x, base), s, align, width, size, -1, col)
 
 

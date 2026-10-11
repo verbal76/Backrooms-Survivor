@@ -1,5 +1,7 @@
 class_name GameInput
 extends Node
+
+const Platform = preload("res://scripts/platform/platform.gd")
 ## Unified input provider (port of input.lua + the key handling of main.lua): keyboard + mouse,
 ## gamepad, Android touch (virtual sticks + on-screen buttons).
 ##
@@ -18,7 +20,9 @@ extends Node
 ## 1 water, 2 bandage, 3 food, Esc pause, F1 (hold) controls, F2 (hold) run stats, C (hold) status, F10 options.
 
 const AIM_RELATIVE_KEYS := true     # Lua: keyboard W = towards the cursor, A/D strafe
-const DEADZONE := 0.2               # input.lua deadzone
+const DEADZONE := 0.2               # default stick dead zone (Options > Stick Dead Zone changes it)
+const TRIGGER_THRESH := 0.30        # LT / RT count as pressed above this (fire, tactical map)
+const TRIGGER_EDGE := 0.50          # trigger-bound one-shot actions
 const UI_DEADZONE := 0.35
 const UI_FIRST_DELAY := 0.22
 const UI_REPEAT := 0.10
@@ -46,16 +50,23 @@ const ACTIONS := [
 	{"id": "status_hud", "label": "Status Panel (hold)", "key": KEY_C, "pad": JOY_BUTTON_DPAD_UP},
 	{"id": "run_stats", "label": "Run Stats (hold)", "key": KEY_F2, "pad": JOY_BUTTON_DPAD_DOWN},
 	{"id": "controls", "label": "Controls Help (hold)", "key": KEY_F1, "pad": JOY_BUTTON_RIGHT_STICK},
-	{"id": "pause", "label": "Pause (Esc always works)", "key": KEY_P, "pad": JOY_BUTTON_BACK},
+	{"id": "pause", "label": "Pause (Esc always works)", "key": KEY_P, "pad": -2},      # pad: Menu (Start), fixed
+	# Steam Deck back grips (L4 / L5 / R4 / R5) as well as Elite / DualSense-edge paddles. Defaults suit the Deck.
+	{"id": "quick_heal", "label": "Quick Heal (grip)", "key": 0, "pad": JOY_BUTTON_PADDLE2},
+	{"id": "quick_drink", "label": "Quick Drink (grip)", "key": 0, "pad": JOY_BUTTON_PADDLE4},
+	{"id": "quick_bomb", "label": "Quick Bomb (grip)", "key": 0, "pad": JOY_BUTTON_PADDLE1},
+	{"id": "quick_lamp", "label": "Quick Lamp (grip)", "key": 0, "pad": JOY_BUTTON_PADDLE3},
 ]
 ## Actions that fire a one-frame just() edge when their key / button goes down.
 const EDGE_ACTIONS := ["bomb", "weapon_next", "weapon_prev", "headlamp", "battery", "use_water", "use_bandage",
-	"use_food", "status_hud", "run_stats", "controls", "pause"]
+	"use_food", "status_hud", "run_stats", "controls", "pause", "quick_heal", "quick_drink", "quick_bomb", "quick_lamp"]
 const RESERVED_KEYS := [KEY_ESCAPE, KEY_ENTER, KEY_KP_ENTER, KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_F10]
 const RESERVED_PADS := [JOY_BUTTON_START]
-const PAD_NAMES := {0: "A", 1: "B", 2: "X", 3: "Y", 4: "Back", 5: "Guide", 6: "Start", 7: "L-Stick Click",
-	8: "R-Stick Click", 9: "LB", 10: "RB", 11: "D-Pad Up", 12: "D-Pad Down", 13: "D-Pad Left", 14: "D-Pad Right",
-	15: "Share", 16: "Paddle 1", 17: "Paddle 2", 18: "Paddle 3", 19: "Paddle 4", 20: "Touchpad", 100: "LT", 101: "RT"}
+## Xbox-style names: that is what Steam Input presents on the Deck (A/B/X/Y, LB/RB, LT/RT, L3/R3, View, Menu).
+## Back grips: Godot's PADDLE1..4 are R4 / L4 / R5 / L5 on the Deck's layout (SDL order).
+const PAD_NAMES := {0: "A", 1: "B", 2: "X", 3: "Y", 4: "View", 5: "Steam", 6: "Menu", 7: "L3",
+	8: "R3", 9: "LB", 10: "RB", 11: "D-Pad Up", 12: "D-Pad Down", 13: "D-Pad Left", 14: "D-Pad Right",
+	15: "Share", 16: "R4", 17: "L4", 18: "R5", 19: "L5", 20: "Touchpad", 100: "LT", 101: "RT"}
 ## Touch button label per action ("" = no on-screen button).
 const TOUCH_LABELS := {"attack": "ATTACK", "sprint": "SPRINT", "bomb": "BOMB", "weapon_next": "WPN", "weapon_prev": "WPN",
 	"headlamp": "LAMP", "battery": "BAT", "use_water": "H2O", "use_bandage": "MED", "use_food": "EAT", "pause": "||"}
@@ -76,6 +87,7 @@ var show_controls := false
 var text_entry := false
 var mode := "keyboard"                 # detected mode when options say "auto"
 var aim_angle := 0.0                   # radians, last known aim direction
+var debug_force_pad := -1              # tests: treat this joypad id as connected (headless has none)
 var debug_insets := Vector4(-1, -1, -1, -1)   # tests: override the safe-area insets (l, t, r, b)
 
 var _just := {}
@@ -105,14 +117,16 @@ var _maps_dirty := true
 var _capture := {}                     # {device, action} while waiting for a key / button
 var _capture_cooldown := 0.0
 var _platform_mode := "keyboard"
+var _mouse_acc := 0.0                  # recent real mouse movement in px (hysteresis while a pad is in use)
+var _rumble_last := {}                 # kind -> msec of the last rumble
 
 
 func setup(g) -> void:
 	game = g
-	_platform_mode = "touch" if OS.has_feature("mobile") else "keyboard"
+	_platform_mode = "touch" if OS.has_feature("mobile") else ("gamepad" if Platform.is_deck_like() else "keyboard")
 	mode = _platform_mode
-	if not OS.has_feature("mobile") and not Input.get_connected_joypads().is_empty():
-		mode = "gamepad"                 # a controller is attached at launch: default to it
+	if not OS.has_feature("mobile") and (not Input.get_connected_joypads().is_empty() or Platform.is_deck_like()):
+		mode = "gamepad"                 # a controller is attached at launch (always on a Deck): default to it
 	Input.joy_connection_changed.connect(_on_joy_connection)
 	_layer = CanvasLayer.new()
 	_layer.layer = 60
@@ -122,6 +136,15 @@ func setup(g) -> void:
 	_touch_ui.draw.connect(_draw_touch)
 	_layer.add_child(_touch_ui)
 	add_child(_layer)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		# drop held state so nothing sticks after alt-tab / Steam overlay / Deck suspend
+		_just.clear()
+		_fire_latch = false
+		_prev_btn.clear()
+		stop_rumble()
 
 
 func _on_joy_connection(_device: int, connected: bool) -> void:
@@ -229,8 +252,9 @@ func begin_capture(device: String, action: String) -> void:
 
 
 func cancel_capture() -> void:
+	if not _capture.is_empty():
+		_capture_cooldown = 0.3          # swallow the press that cancelled it; opening a page must not lock input
 	_capture = {}
-	_capture_cooldown = 0.3
 
 
 func capturing() -> bool:
@@ -255,7 +279,9 @@ func key_name(k: int) -> String:
 		return _key_names[k]
 	var kc := k
 	# layout-aware label only where the display server supports it (not headless/Android: it errors every call)
-	if OS.has_feature("windows") or OS.has_feature("macos") or OS.has_feature("linuxbsd"):
+	# (skipped under Proton / on the Deck: names then come from the physical keycode, which is always safe)
+	if (OS.has_feature("windows") or OS.has_feature("macos") or OS.has_feature("linuxbsd")) \
+			and not Platform.is_proton() and not Platform.is_deck_like():
 		if DisplayServer.get_name() != "headless":
 			var m: int = DisplayServer.keyboard_get_keycode_from_physical(k as Key)
 			if m > 0:
@@ -264,6 +290,16 @@ func key_name(k: int) -> String:
 	var out: String = n if n != "" else "Key %d" % k
 	_key_names[k] = out
 	return out
+
+
+## Short glyph name for tight spots (HUD quick-item row).
+func pad_short(c: int) -> String:
+	match c:
+		JOY_BUTTON_DPAD_UP: return "D-Up"
+		JOY_BUTTON_DPAD_DOWN: return "D-Down"
+		JOY_BUTTON_DPAD_LEFT: return "D-Left"
+		JOY_BUTTON_DPAD_RIGHT: return "D-Right"
+	return pad_name(c)
 
 
 func pad_name(c: int) -> String:
@@ -301,9 +337,23 @@ func prompt(action: String, m := "") -> String:
 		return move_prompt(m)
 	if action == "aim":
 		return aim_prompt(m)
+	if action in ["accept", "back", "menu"]:
+		match m:
+			"gamepad":
+				return {"accept": "[A]", "back": "[B]", "menu": "[Menu]"}[action]
+			"touch":
+				return {"accept": "tap", "back": "the back button", "menu": "the pause button"}[action]
+			_:
+				return {"accept": "[Enter]", "back": "[Esc]", "menu": "[Esc]"}[action]
 	match m:
 		"gamepad":
 			var c := pad_of(action)
+			if action in ["menu", "pause"]:
+				return "[Menu]"
+			if action in ["accept", "interact"]:
+				return "[A]"
+			if action == "back":
+				return "[B]"
 			return "[%s]" % pad_name(c) if c >= 0 else "(unbound)"
 		"touch":
 			if TOUCH_LABELS.has(action):
@@ -332,6 +382,19 @@ func fill(template: String, m := "") -> String:
 	return out
 
 
+## One-line footer / prompt text for the ACTIVE device. Keyboard wording is never returned while a controller
+## (or touch) is in use. This and prompt() are the only places that name physical inputs, so real Steam Input
+## glyph textures can replace them later in one spot.
+func hint(kb: String, pad: String, touch := "") -> String:
+	match active_mode():
+		"gamepad":
+			return pad
+		"touch":
+			return touch if touch != "" else pad
+		_:
+			return kb
+
+
 func controls_list(m := "") -> Array:
 	m = active_mode() if m == "" else m
 	var out: Array = []
@@ -342,15 +405,17 @@ func controls_list(m := "") -> Array:
 				["BOMB", "Throw a bomb"], ["WPN", "Cycle weapon"], ["H2O / MED / EAT", "Drink / bandage / eat"],
 				["LAMP / BAT", "Headlamp / replace battery"], ["||", "Pause / menu"], ["Double-tap centre", "Pause / menu"]]
 		"gamepad":
-			out = [["Left Stick", "Move"], ["Right Stick", "Aim (auto-aim assist when idle)"]]
+			out = [["Left Stick", "Move"], ["Right Stick", "Aim (auto-aim when idle)"]]
 			for a in ACTIONS:
-				if int(a.pad) != -2:
+				if int(a.pad) != -2 and pad_of(a.id) >= 0:
 					out.append([pad_name(pad_of(a.id)), String(a.label)])
+			out.append(["Menu", "Pause / menu"])
+			out.append(["View", "Dismiss tip (hold: tips off)"])
 		_:
 			out = [[move_prompt("keyboard"), "Move (relative to aim)"], ["Mouse", "Aim"], ["Left Click", "Attack"],
 				["Right Click (hold)", "Tactical Map"], ["Wheel", "Change weapon"]]
 			for a in ACTIONS:
-				if not String(a.id).begins_with("move_"):
+				if not String(a.id).begins_with("move_") and key_of(a.id) > 0:
 					out.append([key_name(key_of(a.id)), String(a.label)])
 			out.append(["F10", "Options"])
 	return out
@@ -360,6 +425,30 @@ func scheme() -> Dictionary:
 	var m := active_mode()
 	return {"name": {"keyboard": "Keyboard + Mouse", "gamepad": "Gamepad", "touch": "Touchscreen"}.get(m, "Keyboard + Mouse"),
 		"controls": controls_list(m)}
+
+
+## Controller rumble. kind: hit | kill | damage | explosion | levelup | refuse. `scale` multiplies the strength
+## (e.g. damage / 30). Honours Options > Rumble / Rumble Strength; no-op unless a pad is the active device.
+const RUMBLE := {"hit": [0.0, 0.30, 0.06, 90], "kill": [0.25, 0.45, 0.10, 120], "damage": [0.45, 0.85, 0.22, 100],
+	"explosion": [0.90, 1.00, 0.40, 200], "levelup": [0.35, 0.30, 0.30, 400], "refuse": [0.10, 0.25, 0.08, 300]}
+
+
+func rumble(kind: String, scale := 1.0) -> void:
+	var o := opts()
+	if not o.rumble or _gp < 0 or active_mode() != "gamepad" or not RUMBLE.has(kind):
+		return
+	var r: Array = RUMBLE[kind]
+	var now := Time.get_ticks_msec()
+	if now - int(_rumble_last.get(kind, -10000)) < int(r[3]):
+		return
+	_rumble_last[kind] = now
+	var k := o.rumble_strength * clampf(scale, 0.3, 1.5)
+	Input.start_joy_vibration(_gp, clampf(r[0] * k, 0.0, 1.0), clampf(r[1] * k, 0.0, 1.0), r[2])
+
+
+func stop_rumble() -> void:
+	if _gp >= 0:
+		Input.stop_joy_vibration(_gp)
 
 
 ## Light vibration on Android when haptics are enabled (touch mode only).
@@ -377,7 +466,37 @@ func just(action: String) -> bool:
 func press(action: String) -> void:
 	if _capture_cooldown > 0.0 or not _capture.is_empty():
 		return
+	match action:
+		"quick_bomb":
+			action = "bomb"
+		"quick_lamp":
+			action = "headlamp"
+		"quick_heal":
+			action = _pick_heal()
+		"quick_drink":
+			action = _pick_drink()
 	_just[action] = true
+
+
+## Back-grip shortcuts: pick the item that helps most (bandage when hurt, else water, else food).
+func _pick_heal() -> String:
+	var p = game.player if game else null
+	if p == null:
+		return "use_bandage"
+	if p.bandages > 0 and p.hp < p.max_hp:
+		return "use_bandage"
+	if p.almond_water > 0:
+		return "use_water"
+	if p.food > 0:
+		return "use_food"
+	return "use_bandage"
+
+
+func _pick_drink() -> String:
+	var p = game.player if game else null
+	if p == null or p.almond_water > 0 or p.food <= 0:
+		return "use_water"
+	return "use_food"
 
 
 ## "keyboard" | "gamepad" | "touch" (resolves the options "Controller" setting).
@@ -392,6 +511,10 @@ func _forced_mode() -> String:
 	return opts().get_control_mode()
 
 
+func pad_held(b: JoyButton) -> bool:
+	return _btn(b)
+
+
 func has_gamepad() -> bool:
 	return _gp >= 0
 
@@ -399,6 +522,7 @@ func has_gamepad() -> bool:
 # ---- per-frame ----------------------------------------------------------------------------
 
 func tick(dt: float) -> void:
+	_mouse_acc = maxf(0.0, _mouse_acc - 200.0 * dt)
 	if _maps_dirty:
 		_rebuild_maps()
 	if _capture_cooldown > 0.0:
@@ -463,9 +587,11 @@ func _refuse_feedback(why: String) -> void:
 			game.audio.play("gasp_for_air", null, 0.35, 1.2)
 		game.ui.add_message("NO STAMINA", Color(1, 0.6, 0.2), 1.0)
 		vibrate(30)
+		rumble("refuse")
 	elif game.audio:
 		game.audio.play("swing_sound", null, 0.3, 1.8)    # dry click; weapons.gd shows NO AMMO
 		vibrate(30)
+		rumble("refuse")
 
 
 ## Called by game.gd at the end of every simulated frame (NOT during hit-stop), so presses made between
@@ -514,6 +640,9 @@ func _update_keyboard() -> void:
 
 
 func _poll_gamepad_device() -> void:
+	if debug_force_pad >= 0:               # tests: pretend this joypad id is attached
+		_gp = debug_force_pad
+		return
 	var pads := Input.get_connected_joypads()
 	if pads.is_empty():
 		_gp = -1
@@ -531,31 +660,38 @@ func _btn(b: JoyButton) -> bool:
 	return _gp >= 0 and Input.is_joy_button_pressed(_gp, b)
 
 
-func _dz(v: float) -> float:
-	return 0.0 if absf(v) < DEADZONE else v
+## Radial dead zone with rescaling: small drift is ignored, then the response ramps smoothly up to full
+## deflection (reached at ~95% of the gate so a worn or square-gated stick still gets 100% speed).
+func _stick(ax: JoyAxis, ay: JoyAxis) -> Vector2:
+	var v := Vector2(_axis(ax), _axis(ay))
+	var dz := clampf(opts().pad_deadzone, 0.05, 0.4)
+	var l := v.length()
+	if l <= dz:
+		return Vector2.ZERO
+	return v / l * clampf((l - dz) / (0.95 - dz), 0.0, 1.0)
 
 
-func _code_held(code: int, trig_thresh := 0.2) -> bool:
+func _code_held(code: int, trig_thresh := TRIGGER_THRESH) -> bool:
 	if code < 0:
 		return false
 	if code == 100:
-		return _axis(JOY_AXIS_TRIGGER_LEFT) > minf(trig_thresh, 0.15)
+		return _axis(JOY_AXIS_TRIGGER_LEFT) > trig_thresh
 	if code == 101:
 		return _axis(JOY_AXIS_TRIGGER_RIGHT) > trig_thresh
 	return _btn(code as JoyButton)
 
 
 func _update_gamepad(dt: float) -> void:
-	var lx := _dz(_axis(JOY_AXIS_LEFT_X))
-	var ly := _dz(_axis(JOY_AXIS_LEFT_Y))
-	move = Vector2(lx, ly)
-	if move.length() > 1.0:
-		move = move.normalized()
-	var rx := _dz(_axis(JOY_AXIS_RIGHT_X))
-	var ry := _dz(_axis(JOY_AXIS_RIGHT_Y))
-	aim_active = absf(rx) > DEADZONE or absf(ry) > DEADZONE
+	var ls := _stick(JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y)
+	var lx := ls.x
+	var ly := ls.y
+	move = ls
+	var rs := _stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+	var rx := rs.x
+	var ry := rs.y
+	aim_active = rs != Vector2.ZERO
 	if aim_active:
-		_gp_aim_dir = Vector2(rx, ry).normalized()
+		_gp_aim_dir = rs.normalized()
 		aim_angle = _gp_aim_dir.angle()
 		aim_world = _player_px() + _gp_aim_dir * 5.0 * game.TILE
 	else:
@@ -575,7 +711,7 @@ func _update_gamepad(dt: float) -> void:
 		if c < 100:
 			continue
 		var key: String = "act_" + str(a)
-		var now := _code_held(c, 0.5)
+		var now := _code_held(c, TRIGGER_EDGE)
 		if now and not _prev_btn.get(key, false):
 			press(a)
 		_prev_btn[key] = now
@@ -585,6 +721,10 @@ func _update_gamepad(dt: float) -> void:
 	var sy := ly if absf(ly) > absf(ry) else ry
 	var hx := 0
 	var hy := 0
+	if absf(sx) >= absf(sy):
+		sy = 0.0          # sticks navigate along their dominant axis only (no diagonal double steps)
+	else:
+		sx = 0.0
 	if _btn(JOY_BUTTON_DPAD_LEFT) or sx < -UI_DEADZONE: hx = -1
 	elif _btn(JOY_BUTTON_DPAD_RIGHT) or sx > UI_DEADZONE: hx = 1
 	if _btn(JOY_BUTTON_DPAD_UP) or sy < -UI_DEADZONE: hy = -1
@@ -905,8 +1045,9 @@ func _draw_touch() -> void:
 		draw_stick(o, maxr, kp, col, op if s.id >= 0 else op * 0.8, k)
 		if s.id < 0:
 			var gl: String = names[key]
-			var gw := font.get_string_size(gl, HORIZONTAL_ALIGNMENT_LEFT, -1, int(13 * k)).x
-			_touch_ui.draw_string(font, o + Vector2(-gw * 0.5, maxr + 18 * k), gl, HORIZONTAL_ALIGNMENT_LEFT, -1, int(13 * k), Color(1, 1, 1, 0.8 * op))
+			var gfs := maxi(12, int(13 * k))
+			var gw := font.get_string_size(gl, HORIZONTAL_ALIGNMENT_LEFT, -1, gfs).x
+			_touch_ui.draw_string(font, o + Vector2(-gw * 0.5, maxr + 18 * k), gl, HORIZONTAL_ALIGNMENT_LEFT, -1, gfs, Color(1, 1, 1, 0.8 * op))
 	var p = game.player
 	var ui = game.ui
 	var f := op / 0.6
@@ -923,7 +1064,7 @@ func _draw_touch() -> void:
 		var fs := int(maxf(12.0, b.r * (0.36 if b.action == "attack" else 0.46)))
 		var tw := font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		if tw > r * 1.7:
-			fs = int(fs * r * 1.7 / tw)
+			fs = maxi(10, int(fs * r * 1.7 / tw))
 			tw = font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		_touch_ui.draw_string(font, b.pos + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, minf(1.0, 0.95 * f * dim)))
 		# inventory badge
@@ -941,7 +1082,7 @@ func _draw_touch() -> void:
 		if count >= 0:
 			var bp: Vector2 = b.pos + Vector2(b.r * 0.72, -b.r * 0.72)
 			var cs := str(count)
-			var bf := int(15 * k)
+			var bf := maxi(12, int(15 * k))
 			var cw := ThemeDB.fallback_font.get_string_size(cs, HORIZONTAL_ALIGNMENT_LEFT, -1, bf).x
 			var br := maxf(11.0 * k, cw * 0.5 + 5.0)
 			_touch_ui.draw_circle(bp, br, Color(0, 0, 0, 0.8))
@@ -981,9 +1122,13 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventScreenTouch:
-		_handle_touch(event)
+		# On desktop / Steam Deck a touch is just a mouse click (Godot emulates it): never switch to the
+		# on-screen touch controls unless the player forced "Touch" in Options.
+		if _touch_controls_allowed():
+			_handle_touch(event)
 	elif event is InputEventScreenDrag:
-		_handle_drag(event)
+		if _touch_controls_allowed():
+			_handle_drag(event)
 	elif event is InputEventKey and event.pressed:
 		if not event.echo or _is_nav_key(event.physical_keycode):
 			_set_detected("keyboard")
@@ -991,6 +1136,7 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed:
 		if event.device != InputEvent.DEVICE_ID_EMULATION and not _touch_recent():
 			_set_detected("keyboard")
+			_mouse_acc = 100.0
 			if event.button_index == MOUSE_BUTTON_LEFT:
 				_fire_latch = true
 		if game.state == "playing":
@@ -998,19 +1144,23 @@ func _input(event: InputEvent) -> void:
 				press("weapon_next")
 			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 				press("weapon_prev")
-			elif event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION:
+			elif event.button_index == MOUSE_BUTTON_LEFT:
 				if game.ui and game.ui.get("tips") != null and game.ui.tips.try_tap(event.position):
 					get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion:
 		if event.device != InputEvent.DEVICE_ID_EMULATION and not _touch_recent():
-			if event.relative.length() > 1.5:
+			# while a pad is in use, a brushed trackpad / bumped mouse must not flip the prompts to keyboard
+			_mouse_acc += event.relative.length()
+			if _mouse_acc > (40.0 if mode == "gamepad" else 1.5):
 				_set_detected("keyboard")
 	elif event is InputEventJoypadButton and event.pressed:
+		_gp = event.device                 # follow whichever pad is actually being used (Steam virtual pad etc.)
 		_set_detected("gamepad")
 		if active_mode() == "gamepad":
 			_pad_button_pressed(event.button_index)
 	elif event is InputEventJoypadMotion:
 		if absf(event.axis_value) > 0.5:
+			_gp = event.device
 			_set_detected("gamepad")
 		if active_mode() == "gamepad" and event.axis == JOY_AXIS_TRIGGER_RIGHT and event.axis_value > 0.3 \
 				and pad_of("attack") == 101:
@@ -1062,11 +1212,16 @@ func _pad_button_pressed(b: int) -> void:
 		JOY_BUTTON_B:
 			press("ui_back")
 			press("pad_b")
+		JOY_BUTTON_X:
+			press("pad_x")
+		JOY_BUTTON_Y:
+			press("pad_y")
 		JOY_BUTTON_START:
-			press("ui_accept")
 			press("pad_start")
+			press("pause")             # Menu always pauses (and resumes) like on every console
 		JOY_BUTTON_BACK:
 			press("ui_back")
+			press("pad_back")
 	if _maps_dirty:
 		_rebuild_maps()
 	for a in EDGE_ACTIONS:
@@ -1074,6 +1229,10 @@ func _pad_button_pressed(b: int) -> void:
 			press(a)
 	if pad_of("attack") == b:
 		_fire_latch = true
+
+
+func _touch_controls_allowed() -> bool:
+	return OS.has_feature("mobile") or opts().get_control_mode() == "touch"
 
 
 func _touch_recent() -> bool:

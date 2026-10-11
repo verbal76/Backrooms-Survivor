@@ -25,8 +25,13 @@ var _alpha := 0.0
 var _flags := {}                       # event flags raised by signals
 var _wired := false
 var _text := ""
+var _raw := ""                         # template (tokens not yet filled)
+var _text_mode := ""                   # control scheme _text was filled for
 var _title := ""
 var _col := Color.WHITE
+var _s := 1.0                          # UI scale the card was last drawn at
+var _view_down := false                # pad: View held (tap = got it, hold = tips off)
+var _view_t := 0.0
 
 
 func bind(p_ui, p_game) -> void:
@@ -92,7 +97,21 @@ func tick(dt: float) -> void:
 	if current != "":
 		_t += dt
 		var inp: GameInput = game.input
-		if _t > 0.4 and (inp.just("interact") or inp.just("pad_start")):
+		if inp.just("pad_back"):
+			_view_down = true
+			_view_t = 0.0
+		if _view_down:
+			_view_t += dt
+			if not inp.pad_held(JOY_BUTTON_BACK):
+				_view_down = false
+				if _t > 0.3:
+					dismiss()                       # a tap on View: got it
+			elif _view_t > 0.9:
+				_view_down = false
+				disable_all()                       # held View: turn tips off
+		if current == "":
+			pass
+		elif _t > 0.4 and inp.just("interact"):
 			dismiss()
 		elif inp.just("tip_skip_all"):
 			disable_all()
@@ -128,7 +147,9 @@ func _show(id: String) -> void:
 	var d: Dictionary = TutorialData.TIPS[id]
 	_title = d.title
 	_col = d.color
-	_text = game.input.fill(d.text)
+	_raw = d.text
+	_text_mode = game.input.active_mode()
+	_text = game.input.fill(_raw)
 	_life = clampf(4.0 + _text.length() * 0.055, 7.0, 15.0)
 	ui.progression.mark_tip_seen(id)
 	if id == "chest_open":
@@ -152,6 +173,7 @@ func disable_all() -> void:
 
 ## Mouse / touch: tap on the card dismisses it, tap on "TIPS OFF" disables all tips. Returns true if consumed.
 func try_tap(pos: Vector2) -> bool:
+	pos /= _s                                  # card_rect lives in the scaled canvas
 	if current == "" or _alpha < 0.5 or not card_rect.has_point(pos):
 		return false
 	if skip_rect.has_point(pos):
@@ -265,18 +287,24 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _alpha <= 0.01:
 		return
-	var w := size.x
-	var h := size.y
+	var s: float = ui.hud_scale()
+	_s = s
+	var w := size.x / s
+	var h := size.y / s
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
 	var id := current
 	if id == "":
 		return
 	var mode: String = game.input.active_mode()
+	if mode != _text_mode:                 # the player switched device while the card is up: re-word it
+		_text_mode = mode
+		_text = game.input.fill(_raw)
 	var ins := Vector4.ZERO
 	if mode == "touch":
 		ins = game.input.safe_insets()
 	var cw := minf(640.0, w - 40.0 - ins.x - ins.z)
 	var pad := 14.0
-	var fs := 16
+	var fs := 17
 	var tw := cw - pad * 2.0
 	var body := UITheme.body_font()
 	var th := body.get_multiline_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, tw, fs).y
@@ -294,19 +322,15 @@ func _draw() -> void:
 	UITheme.wrapped(self, _text, x + pad + 6, y + 38, tw - 6, fs, Color(0.88, 0.88, 0.88, a), HORIZONTAL_ALIGNMENT_LEFT)
 	# footer
 	var fy := y + ch - 26.0
-	var hint := "ENTER: got it    BACKSPACE: tips off"
-	if mode == "gamepad":
-		hint = "START: got it"
-	elif mode == "touch":
-		hint = "TAP: got it"
-	UITheme.text(self, hint, x + pad + 6, fy, 12, Color(0.55, 0.55, 0.5, a))
-	if mode != "keyboard":
+	var hint: String = game.input.hint("ENTER: got it    BACKSPACE: tips off", "[View]: got it    hold [View]: tips off", "TAP: got it")
+	UITheme.text(self, hint, x + pad + 6, fy, 13, Color(0.7, 0.7, 0.62, a))
+	if mode == "touch":
 		skip_rect = Rect2(x + cw - 120.0, fy - 6.0, 112.0, 26.0)
 		UITheme.panel(self, skip_rect, Color(0.12, 0.1, 0.05, 0.9 * a), Color(0.7, 0.3, 0.2, 0.6 * a), 5, 1)
-		UITheme.text(self, "TIPS OFF", skip_rect.position.x, skip_rect.position.y + 5, 12, Color(1, 0.6, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, skip_rect.size.x)
+		UITheme.text(self, "TIPS OFF", skip_rect.position.x, skip_rect.position.y + 5, 13, Color(1, 0.6, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, skip_rect.size.x)
 	else:
-		skip_rect = Rect2(x + cw - 120.0, fy - 6.0, 112.0, 26.0)
-		UITheme.text(self, "[click] dismiss", skip_rect.position.x, skip_rect.position.y + 5, 12, Color(0.45, 0.45, 0.4, a), HORIZONTAL_ALIGNMENT_RIGHT, skip_rect.size.x)
+		if mode == "keyboard":
+			UITheme.text(self, "[click] dismiss", x + cw - 140.0, fy, 13, Color(0.6, 0.6, 0.55, a), HORIZONTAL_ALIGNMENT_RIGHT, 132.0)
 		skip_rect = Rect2()
 	# time bar
 	var frac := clampf(1.0 - _t / _life, 0.0, 1.0)

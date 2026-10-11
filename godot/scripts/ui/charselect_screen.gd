@@ -78,7 +78,7 @@ func handle_input(inp: GameInput, _d: float) -> void:
 		_clamp_scroll()
 	if inp.just("ui_accept"):
 		_activate(sel)
-	elif inp.just("use_bandage") and inp.active_mode() == "gamepad":
+	elif inp.just("pad_x"):
 		_ask_delete()
 	elif inp.just("ui_back") and ui.progression.active_idx >= 0:
 		ui.show_screen("title")
@@ -192,7 +192,7 @@ func _draw() -> void:
 			var dr := Rect2(rect.end.x - 56, y + 2, 50, ROW_H - 12)
 			_del_rects.append(dr)
 			if is_sel or dr.has_point(pointer):
-				button_rect(dr, "DEL", dr.has_point(pointer), 14, Color(1, 0.4, 0.3))
+				button_rect(dr, ui.input.hint("DEL", "X", "DEL"), dr.has_point(pointer), 14, Color(1, 0.4, 0.3))
 		else:
 			_del_rects.append(Rect2())
 			UITheme.head(self, ("> + NEW SUBJECT" if is_sel else "  + NEW SUBJECT"), rect.position.x + 10, y + 6, 20, col)
@@ -205,13 +205,9 @@ func _draw() -> void:
 
 	_draw_leaderboard(list_y + _visible_rows * ROW_H + 6.0)
 
-	var hint := "UP/DOWN select    ENTER open    DEL delete"
-	var m: String = ui.input.active_mode()
-	if m == "gamepad":
-		hint = "D-PAD select    A open    X delete"
-	elif m == "touch":
-		hint = "TAP a subject file to open"
-	UITheme.text(self, hint, 0, h - 52, 12, Color(0, 0.45, 0, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint: String = ui.input.hint("UP/DOWN select    ENTER open    DEL delete", "D-Pad select    A open    X delete    B back",
+		"TAP a subject file to open")
+	UITheme.text(self, hint, 0, h - 52, 13, Color(0, 0.6, 0, 0.9), HORIZONTAL_ALIGNMENT_CENTER, w)
 
 	if confirm_delete:
 		_draw_confirm(w, h)
@@ -272,5 +268,6 @@ func _draw_confirm(w: float, h: float) -> void:
 	UITheme.text(self, "This cannot be undone!", r.position.x, r.position.y + 100, 14, Color(1, 0.4, 0.3), HORIZONTAL_ALIGNMENT_CENTER, bw)
 	_yes_rect = Rect2(r.position.x + 60, r.end.y - 52, 150, 36)
 	_no_rect = Rect2(r.end.x - 210, r.end.y - 52, 150, 36)
-	button_rect(_yes_rect, "YES (Y)", confirm_sel == 0, 18, Color(1, 0.35, 0.25))
-	button_rect(_no_rect, "NO (N)", confirm_sel == 1, 18, Color(0.5, 1, 0.5))
+	button_rect(_yes_rect, ui.input.hint("YES (Y)", "YES"), confirm_sel == 0, 18, Color(1, 0.35, 0.25))
+	button_rect(_no_rect, ui.input.hint("NO (N)", "NO"), confirm_sel == 1, 18, Color(0.5, 1, 0.5))
+	UITheme.text(self, ui.input.hint("", "Left/Right choose    A confirm    B cancel"), r.position.x, r.end.y + 8, 13, Color(0.7, 0.7, 0.7), HORIZONTAL_ALIGNMENT_CENTER, bw)

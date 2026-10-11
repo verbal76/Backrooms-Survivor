@@ -3,8 +3,7 @@ extends UIScreen
 ## options menus. Wording follows the active control scheme (keyboard / gamepad / touch); UP/DOWN (or tapping the
 ## scheme chip) previews the other schemes. LEFT/RIGHT (or swipe / tap the arrows or tabs) change page.
 
-const MODES := ["keyboard", "gamepad", "touch"]
-const MODE_NAMES := {"keyboard": "KEYBOARD + MOUSE", "gamepad": "GAMEPAD", "touch": "TOUCH"}
+const MODE_NAMES := {"keyboard": "KEYBOARD + MOUSE", "gamepad": "CONTROLLER", "touch": "TOUCH"}
 
 var return_to := "title"
 var page := 0
@@ -22,6 +21,13 @@ func _on_open(arg) -> void:
 	page = 0
 	view_mode = ""
 	input_delay = 0.2
+
+
+## Schemes the player can flip through. A controller player only ever sees controller wording.
+func _modes() -> Array:
+	if ui.input.active_mode() == "gamepad":
+		return ["gamepad"]
+	return ["keyboard", "gamepad", "touch"]
 
 
 func _mode() -> String:
@@ -45,9 +51,9 @@ func handle_input(inp: GameInput, _d: float) -> void:
 		_go(-1)
 	if inp.just("ui_right") or inp.just("ui_accept"):
 		_go(1)
-	if inp.just("ui_up") or inp.just("ui_down"):
-		var i := MODES.find(_mode())
-		view_mode = MODES[posmod(i + (1 if inp.just("ui_down") else -1), MODES.size())]
+	if (inp.just("ui_up") or inp.just("ui_down")) and _modes().size() > 1:
+		var i := _modes().find(_mode())
+		view_mode = _modes()[posmod(i + (1 if inp.just("ui_down") else -1), _modes().size())]
 	if inp.just("ui_back") or inp.just("pause"):
 		_back()
 
@@ -63,9 +69,9 @@ func on_pointer_down(p: Vector2) -> void:
 	elif _next_rect.has_point(p):
 		_go(1)
 		_down_x = -1.0
-	elif _chip_rect.has_point(p):
-		var i := MODES.find(_mode())
-		view_mode = MODES[posmod(i + 1, MODES.size())]
+	elif _chip_rect.has_point(p) and _modes().size() > 1:
+		var i := _modes().find(_mode())
+		view_mode = _modes()[posmod(i + 1, _modes().size())]
 		_down_x = -1.0
 	else:
 		for i in _tab_rects.size():
@@ -142,16 +148,15 @@ func _draw() -> void:
 	var by := h - 52.0
 	_back_rect = Rect2(36, by, 150, 36)
 	button_rect(_back_rect, "[ BACK ]", _back_rect.has_point(pointer), 18)
-	_prev_rect = Rect2(w * 0.5 - 170, by, 150, 36)
-	_next_rect = Rect2(w * 0.5 + 20, by, 150, 36)
+	_prev_rect = Rect2(w - 36 - 310, by, 150, 36)
+	_next_rect = Rect2(w - 36 - 150, by, 150, 36)
 	button_rect(_prev_rect, "< PREV", _prev_rect.has_point(pointer), 18)
 	button_rect(_next_rect, "NEXT >", _next_rect.has_point(pointer), 18)
-	var hint := "LEFT/RIGHT page    UP/DOWN other controls    ESC back"
-	if ui.input.active_mode() == "gamepad":
-		hint = "D-PAD page / controls    B back"
-	elif ui.input.active_mode() == "touch":
-		hint = "SWIPE or tap arrows    tap the chip for other controls"
-	UITheme.text(self, hint, w - 440.0 - 16.0, by + 10, 12, Color(0.5, 0.47, 0.32, 0.9), HORIZONTAL_ALIGNMENT_RIGHT, 440)
+	var hint: String = ui.input.hint("LEFT/RIGHT page    UP/DOWN other controls    ESC back", "D-Pad Left/Right page    A next    B back",
+		"SWIPE or tap arrows    tap the chip for other controls")
+	var hx := 36.0 + 150.0 + 14.0
+	var hw := _prev_rect.position.x - 14.0 - hx
+	UITheme.text(self, hint, hx, by + 9, UITheme.fit(hint, 13, hw), Color(0.7, 0.66, 0.46, 0.95), HORIZONTAL_ALIGNMENT_CENTER, hw)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.1), 3.0)
 	UITheme.vignette(self, size, 0.4)
 
@@ -196,7 +201,7 @@ func _draw_controls(r: Rect2, m: String) -> void:
 	var list: Array = ui.input.controls_list(m)
 	var cols := 2 if list.size() > 11 else 1
 	var rows := ceili(float(list.size()) / cols)
-	var row_h := minf(30.0, r.size.y / maxf(rows, 1))
+	var row_h := minf(30.0, (r.size.y - 30.0) / maxf(rows, 1))        # leave room for the note under the table
 	var fs := int(clampf(row_h * 0.6, 12, 17))
 	var cw := r.size.x / cols
 	for i in list.size():
@@ -204,7 +209,9 @@ func _draw_controls(r: Rect2, m: String) -> void:
 		var row := i % rows
 		var x := r.position.x + col * cw
 		var y := r.position.y + row * row_h
-		UITheme.text(self, list[i][0], x, y, fs, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_RIGHT, cw * 0.38)
-		UITheme.text(self, list[i][1], x + cw * 0.38 + 16, y, fs, Color(0.82, 0.82, 0.82), HORIZONTAL_ALIGNMENT_LEFT, cw * 0.62 - 24)
-	var note := "Rebind keys and buttons in OPTIONS > CONTROLS. The game auto-detects whether you use keyboard, gamepad or touch."
-	UITheme.text(self, note, r.position.x, r.end.y - 22, 13, Color(0.6, 0.58, 0.4))
+		UITheme.text(self, list[i][0], x, y, fs, Color(1, 0.9, 0.3), HORIZONTAL_ALIGNMENT_RIGHT, cw * 0.30)
+		var desc: String = list[i][1]
+		UITheme.text(self, desc, x + cw * 0.30 + 14, y, UITheme.fit(desc, fs, cw * 0.70 - 26), Color(0.82, 0.82, 0.82), HORIZONTAL_ALIGNMENT_LEFT, cw * 0.70 - 26)
+	var note: String = ui.input.hint("Rebind keys and buttons in OPTIONS > CONTROLS. The game auto-detects keyboard, controller or touch.",
+		"Rebind buttons in OPTIONS > CONTROLS. Back grips (L4 / L5 / R4 / R5) are quick-use shortcuts.")
+	UITheme.text(self, note, r.position.x, r.end.y - 22, 13, Color(0.7, 0.68, 0.5))

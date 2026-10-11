@@ -95,6 +95,31 @@ func setup(g) -> void:
 	reset_run()
 
 
+## Quality preset hook (Quality.apply): shadow softness, ceiling-light count, post-FX level.
+func set_quality(p: Dictionary) -> void:
+	if lamp == null:
+		return
+	match int(p.shadow):
+		0:
+			lamp.shadow_filter = Light2D.SHADOW_FILTER_NONE
+		1:
+			lamp.shadow_filter = Light2D.SHADOW_FILTER_PCF5
+			lamp.shadow_filter_smooth = 1.0
+		_:
+			lamp.shadow_filter = Light2D.SHADOW_FILTER_PCF5
+			lamp.shadow_filter_smooth = 2.0
+	var limit := clampi(int(p.fixtures), 0, _fixture_lights.size())
+	for i in _fixture_lights.size():
+		var e: Dictionary = _fixture_lights[i]
+		e["off"] = i >= limit
+		if e.off:
+			e.target = 0.0
+			e.used = false
+			_fixture_by_key.erase(e.key)
+	if post:
+		post.set_quality(int(p.post))
+
+
 func reset_run() -> void:
 	battery_max = 100.0
 	battery = battery_max
@@ -362,7 +387,7 @@ func _assign_fixtures() -> void:
 		if _fixture_by_key.has(k):
 			continue
 		for e in _fixture_lights:
-			if not e.used and e.fade <= 0.01:
+			if not e.used and e.fade <= 0.01 and not e.get("off", false):
 				e.used = true
 				e.key = k
 				e.target = 1.0

@@ -47,6 +47,7 @@ var day_seconds := DAY_SECONDS
 var run_time := 0.0          # seconds survived this run (pauses with the game)
 var day := 1
 var kills := 0
+var stream_radius := 32      # chunk generation radius in tiles (Options > Quality lowers it)
 var _views := {}
 var _hitstop := 0.0
 
@@ -209,7 +210,7 @@ func _on_player_died() -> void:
 
 
 func _stream_chunks() -> void:
-	map.ensure_around(player.tile_pos, 32)
+	map.ensure_around(player.tile_pos, stream_radius)
 	for c in map.drain_new_chunks():
 		var view := ChunkView.new()
 		world.add_child(view)

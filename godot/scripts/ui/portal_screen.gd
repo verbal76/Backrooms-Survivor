@@ -33,14 +33,15 @@ func handle_input(inp: GameInput, _d: float) -> void:
 		if inp.just("ui_accept") or inp.just("ui_back"):
 			ui.back_to_title()
 		return
-	if inp.just("ui_left") or inp.just("headlamp"):
+	var pad: bool = inp.active_mode() == "gamepad"      # irreversible choice: pads use D-Pad / sticks + A only
+	if inp.just("ui_left") or (inp.just("headlamp") and not pad):
 		sel = 0
-	if inp.just("ui_right") or inp.just("bomb"):
+	if inp.just("ui_right") or (inp.just("bomb") and not pad):
 		sel = 1
-	if inp.just("use_water"):
+	if inp.just("use_water") and not pad:
 		sel = 0
 		ui.resolve_portal(true)
-	elif inp.just("use_bandage"):
+	elif inp.just("use_bandage") and not pad:
 		sel = 1
 		ui.resolve_portal(false)
 	elif inp.just("ui_accept"):
@@ -114,14 +115,12 @@ func _draw_prompt() -> void:
 		var edge := Color(col.r, col.g, col.b, (0.35 + 0.55 * hv) * ca)
 		UITheme.panel(self, r, fillc, edge, 8, 2)
 		var dim := 1.0 - hv
-		UITheme.head(self, "[%d]" % (i + 1), r.position.x, r.position.y + 10, 22, col.lerp(Color(0.4, 0.4, 0.4), dim), HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+		UITheme.head(self, ui.input.hint("[%d]" % (i + 1), "[ < ]" if i == 0 else "[ > ]"), r.position.x, r.position.y + 10, 22, col.lerp(Color(0.4, 0.4, 0.4), dim), HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		UITheme.head(self, c.title, r.position.x, r.position.y + 38, 30, Color(1, 1, 1).lerp(Color(0.5, 0.5, 0.5), dim), HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		UITheme.text(self, c.subtitle, r.position.x, r.position.y + 74, 15, col.lerp(Color(0.4, 0.4, 0.4), dim), HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		UITheme.wrapped(self, c.desc, r.position.x + 10, r.position.y + 98, r.size.x - 20, 13, Color(0.7, 0.8, 0.7).lerp(Color(0.35, 0.35, 0.35), dim))
-	var hint := "LEFT/RIGHT choose    ENTER confirm    ESC not yet"
-	if ui.input.active_mode() == "gamepad":
-		hint = "D-PAD / BUMPERS choose    A confirm    B not yet"
-	UITheme.text(self, hint, 0, h - 40, 13, Color(0.5, 0.5, 0.5, 0.8 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint: String = ui.input.hint("LEFT/RIGHT choose    ENTER confirm    ESC not yet", "D-Pad choose    A confirm    B not yet", "TAP a choice")
+	UITheme.text(self, hint, 0, h - 40, 14, Color(0.62, 0.62, 0.62, 0.9 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.5)
 
 
@@ -166,5 +165,5 @@ func _draw_victory() -> void:
 	UITheme.head(self, "+%d TOKENS (2x Escape Bonus!)" % ui.victory_tokens, 0, y - (1.0 - ta) * 10, 26, Color(0.9, 0.8, 0.2, ta), HORIZONTAL_ALIGNMENT_CENTER, w)
 	y += 52.0
 	var blink := 0.5 + 0.5 * sin(t * 3.0)
-	UITheme.text(self, "[ %s ]" % {"gamepad": "Press A to continue", "touch": "Tap to continue"}.get(ui.input.active_mode(), "Press Enter to continue"), 0, y, 16, Color(0.7, 0.8, 0.7, (0.4 + 0.6 * blink) * ta), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, "[ %s ]" % ui.input.hint("Press Enter to continue", "Press A to continue", "Tap to continue"), 0, y, 16, Color(0.7, 0.8, 0.7, (0.4 + 0.6 * blink) * ta), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.5)

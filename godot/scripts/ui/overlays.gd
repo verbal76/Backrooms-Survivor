@@ -42,12 +42,27 @@ func _draw() -> void:
 	var h := size.y
 	if _a_map > 0.01:
 		_draw_tactical(w, h)
+	# panels are drawn magnified by the UI scale, shrunk when the page would not fit
+	var s: float = ui.hud_scale()
 	if _a_status > 0.01:
-		_draw_status(w, h)
+		_scaled(w, h, s, 380.0, 360.0, _draw_status)
 	if _a_stats > 0.01:
-		_draw_run_stats(w, h)
+		_scaled(w, h, s, 560.0, 440.0, _draw_run_stats)
 	if _a_controls > 0.01:
-		_draw_controls(w, h)
+		_scaled(w, h, s, _controls_size().y + 24.0, _controls_size().x + 24.0, _draw_controls)
+
+
+func _scaled(w: float, h: float, s: float, need_h: float, need_w: float, fn: Callable) -> void:
+	var k := minf(s, minf(h / need_h, w / need_w))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(k, k))
+	fn.call(w / k, h / k)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _controls_size() -> Vector2:
+	var n: int = game.input.scheme().controls.size()
+	var cols := 2 if n > 12 else 1
+	return Vector2(400.0 * cols + 20.0, 24.0 * ceili(float(n) / cols) + 64.0)
 
 
 func _panel(r: Rect2, a: float) -> void:
@@ -190,8 +205,9 @@ func _draw_run_stats(w: float, h: float) -> void:
 			_row(c1, y, "Portal", "%d guards remain" % portal.guards, a, Color(1, 0.4, 0.2))
 		else:
 			_row(c1, y, "Portal", "CLEAR - approach to escape", a, Color(0.2, 1, 0.5))
-	var key := "Release D-Down" if game.input.active_mode() == "gamepad" else "Release F2"
-	UITheme.text(self, "%s to close" % key, r.position.x, r.end.y - 22, 12, Color(0.4, 0.4, 0.4, a), HORIZONTAL_ALIGNMENT_CENTER, pw)
+	var key: String = game.input.hint("Release [%s]" % game.input.key_name(game.input.key_of("run_stats")),
+		"Release [%s]" % game.input.pad_name(game.input.pad_of("run_stats")), "Release to close")
+	UITheme.text(self, "%s to close" % key if game.input.active_mode() != "touch" else key, r.position.x, r.end.y - 22, 12, Color(0.55, 0.55, 0.55, a), HORIZONTAL_ALIGNMENT_CENTER, pw)
 
 
 func _draw_controls(w: float, h: float) -> void:
@@ -199,17 +215,22 @@ func _draw_controls(w: float, h: float) -> void:
 	var scheme: Dictionary = game.input.scheme()
 	var controls: Array = scheme.controls
 	var row_h := 24.0
-	var pw := 420.0
-	var ph := row_h * controls.size() + 64.0
+	var cols := 2 if controls.size() > 12 else 1
+	var rows := ceili(float(controls.size()) / cols)
+	var pw := 400.0 * cols + 20.0
+	var ph := row_h * rows + 64.0
 	var r := Rect2((w - pw) * 0.5, (h - ph) * 0.5 + (1.0 - a) * 14.0, pw, ph)
 	_panel(r, a)
 	UITheme.head(self, String(scheme.name).to_upper(), r.position.x, r.position.y + 10, 24, Color(UITheme.GOLD, a), HORIZONTAL_ALIGNMENT_CENTER, pw)
 	UITheme.line_sep(self, r.position.x + 15, r.end.x - 15, r.position.y + 42, Color(0.4, 0.35, 0.2, 0.6 * a))
-	var y := r.position.y + 50
-	for c in controls:
-		UITheme.text(self, c[0], r.position.x + 20, y, 14, Color(1, 0.95, 0.7, a))
-		UITheme.text(self, c[1], r.position.x, y, 14, Color(0.65, 0.65, 0.65, a), HORIZONTAL_ALIGNMENT_RIGHT, pw - 20)
-		y += row_h
+	var cw := (pw - 20.0) / cols
+	for i in controls.size():
+		var c: Array = controls[i]
+		var col := i / rows
+		var x0 := r.position.x + 10.0 + col * cw
+		var y := r.position.y + 50 + (i % rows) * row_h
+		UITheme.text(self, c[0], x0 + 10, y, 14, Color(1, 0.95, 0.7, a))
+		UITheme.text(self, c[1], x0, y, 14, Color(0.7, 0.7, 0.7, a), HORIZONTAL_ALIGNMENT_RIGHT, cw - 10)
 
 
 func _draw_tactical(w: float, h: float) -> void:
@@ -276,5 +297,5 @@ func _draw_tactical(w: float, h: float) -> void:
 	UITheme.text(self, "E", r.end.x + 8, r.get_center().y - 8, 14, cc)
 	UITheme.head(self, "TACTICAL MAP  |  Day %d  |  %s" % [game.day, UITheme.DIFF_NAMES[diff - 1]], 0, r.position.y - 52, 22,
 		Color(0.9, 0.8, 0.2, 0.8 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
-	var hint := "Hold LT / Right Click to view"
-	UITheme.text(self, hint, 0, r.end.y + 24, 12, Color(0.5, 0.5, 0.5, 0.6 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint: String = game.input.hint("Hold Right Click to view", "Hold %s to view" % game.input.pad_name(game.input.pad_of("tactical_map")), "")
+	UITheme.text(self, hint, 0, r.end.y + 24, 12, Color(0.6, 0.6, 0.6, 0.8 * a), HORIZONTAL_ALIGNMENT_CENTER, w)

@@ -10,12 +10,39 @@ var input_delay := 0.18         # menu input is ignored this long after opening 
 var dt := 0.016
 var pointer := Vector2(-1000, -1000)
 var _pointer_down := false
+var ui_scale := 1.0             # effective UI scale of this page (Options > UI Scale, capped so the page still fits)
+var design_min := Vector2(800, 520)   # smallest canvas size (px) the page lays out in without clipping
+var _lay_key := Vector3.ZERO
 
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
+
+
+## Fit the page to the canvas at the player's UI scale. The page lays out in a canvas of (vp / scale) px and is
+## drawn magnified by `scale`, so every _draw()/handle_input() keeps using `size` untouched.
+func apply_layout(user_scale: float, vp: Vector2) -> void:
+	var s := clampf(minf(user_scale, minf(vp.x / design_min.x, vp.y / design_min.y)), 0.5, 1.6)
+	if absf(s - 1.0) < 0.001:
+		s = 1.0
+	var key := Vector3(s, vp.x, vp.y)
+	if key == _lay_key:
+		return
+	_lay_key = key
+	ui_scale = s
+	anchor_left = 0.0
+	anchor_top = 0.0
+	anchor_right = 0.0
+	anchor_bottom = 0.0
+	offset_left = 0.0
+	offset_top = 0.0
+	offset_right = vp.x / s
+	offset_bottom = vp.y / s
+	pivot_offset = Vector2.ZERO
+	scale = Vector2(s, s)
+	queue_redraw()
 
 
 func bind(p_ui, p_game) -> void:

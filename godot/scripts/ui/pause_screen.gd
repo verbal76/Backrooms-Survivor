@@ -86,6 +86,7 @@ func _draw() -> void:
 	var a := clampf(age / 0.2, 0.0, 1.0)
 	fill(Color(0, 0, 0, 0.86 * a))
 	var g = ui.game
+	menu.max_rows = menu.rows_for(h - 80.0 - 70.0)
 	var total := 80.0 + menu.total_height()
 	var top := floorf((h - total) * 0.5)
 	UITheme.head(self, "PAUSED", 0, top - (1.0 - a) * 16, 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
@@ -93,5 +94,8 @@ func _draw() -> void:
 		UITheme.DIFF_NAMES[ui.difficulty - 1]]
 	UITheme.text(self, line, 0, top + 48, 16, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	menu.draw(self, w * 0.5, top + 80.0, dt, ui.clock)
+	UITheme.text(self, ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ENTER confirm    ESC resume",
+		"D-Pad select    Left/Right adjust    A confirm    Menu / B resume", "TAP to select"), 0, h - 26, 13,
+		UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.12), 3.0)
 	UITheme.vignette(self, size, 0.5)

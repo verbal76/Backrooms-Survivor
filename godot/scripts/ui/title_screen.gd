@@ -81,6 +81,8 @@ func handle_input(inp: GameInput, _d: float) -> void:
 		menu.adjust(1)
 	if inp.just("ui_accept"):
 		menu.activate()
+	if inp.just("pad_start"):
+		ui.start_game()
 	if inp.just("options"):
 		ui.show_screen("options", "title")
 
@@ -121,9 +123,10 @@ func _draw() -> void:
 		fill(Color(0, 0, 0, darkness * 0.55))
 
 	var s_alpha := clampf(age / 0.5, 0.0, 1.0)
-	var item_n := menu.items.size()
-	var title_h := 142.0
-	var total := title_h + item_n * menu.row_h
+	var compact := h < 560.0
+	var title_h := 112.0 if compact else 142.0
+	menu.max_rows = menu.rows_for(h - title_h - 56.0)
+	var total := title_h + menu.total_height()
 	var top := maxf(8.0, floorf((h - total) * 0.5))
 	var cx := w * 0.5
 
@@ -131,7 +134,7 @@ func _draw() -> void:
 	var flick_t := 1.0
 	if fmod(t * 1.7, 9.0) < 0.06 or fmod(t * 0.77 + 3.0, 13.0) < 0.1:
 		flick_t = 0.45
-	var tsz := 64 if w >= 700 else 48
+	var tsz := 64 if (w >= 700 and not compact) else 48
 	var ty := top - (1.0 - s_alpha) * 18.0
 	UITheme.head(self, "BACKROOMS SURVIVOR", cx - w * 0.5 + 3.0, ty, tsz, Color(1.0, 0.1, 0.1, 0.22 * flick_t * s_alpha), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.head(self, "BACKROOMS SURVIVOR", cx - w * 0.5 - 3.0, ty, tsz, Color(0.1, 0.9, 1.0, 0.18 * flick_t * s_alpha), HORIZONTAL_ALIGNMENT_CENTER, w)
@@ -139,22 +142,18 @@ func _draw() -> void:
 
 	var name: String = ui.player_name
 	var welcome := "Subject: %s  |  Status: STRANDED" % name if name != "" else "There is no saving. There is no loading. Only survival."
-	UITheme.head(self, welcome, 0, top + 80, 22, Color(0.62, 0.56, 0.26, s_alpha), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.head(self, welcome, 0, top + (56 if compact else 80), 22, Color(0.62, 0.56, 0.26, s_alpha), HORIZONTAL_ALIGNMENT_CENTER, w)
 	if name != "":
 		var st: Dictionary = ui.progression.profile_stats(ui.difficulty)
 		if st.totalRuns > 0:
 			var tstr: String = UITheme.fmt_time(st.bestTime) if st.bestTime > 0 else "--:--"
 			var pb := "PB: Day %d  |  %d Kills  |  x%d Streak  |  %s  |  %d Runs" % [st.bestDay, st.bestKills, st.bestStreak, tstr, st.totalRuns]
-			UITheme.text(self, pb, 0, top + 112, 14, Color(0.5, 0.5, 0.42, s_alpha), HORIZONTAL_ALIGNMENT_CENTER, w)
+			UITheme.text(self, pb, 0, top + (84 if compact else 112), 14, Color(0.5, 0.5, 0.42, s_alpha), HORIZONTAL_ALIGNMENT_CENTER, w)
 
 	menu.draw(self, cx, top + title_h, dt, t)
 
-	var hint := "UP/DOWN select    LEFT/RIGHT adjust    ENTER confirm"
-	var m: String = ui.input.active_mode() if ui.input else "keyboard"
-	if m == "gamepad":
-		hint = "D-PAD select    LEFT/RIGHT adjust    A confirm"
-	elif m == "touch":
-		hint = "TAP to select    DRAG sliders"
-	UITheme.text(self, hint, 0, h - 26, 13, Color(0.45, 0.42, 0.3, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint: String = ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ENTER confirm",
+		"D-Pad select    Left/Right adjust    A confirm    Menu start", "TAP to select    DRAG sliders")
+	UITheme.text(self, hint, 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.12), 3.0)
 	UITheme.vignette(self, size, 0.55)

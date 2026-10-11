@@ -33,13 +33,14 @@ func _pick(i: int) -> void:
 func handle_input(inp: GameInput, _d: float) -> void:
 	if _chosen >= 0:
 		return
-	if inp.just("ui_left") or inp.just("weapon_prev"):
+	var pad: bool = inp.active_mode() == "gamepad"      # with a pad only D-Pad / sticks + A (no gameplay-button shortcuts)
+	if inp.just("ui_left") or (inp.just("weapon_prev") and not pad):
 		sel = 0
-	if inp.just("ui_right") or inp.just("weapon_next"):
+	if inp.just("ui_right") or (inp.just("weapon_next") and not pad):
 		sel = 1
-	if inp.just("use_water"):
+	if inp.just("use_water") and not pad:
 		_pick(0)
-	elif inp.just("use_bandage"):
+	elif inp.just("use_bandage") and not pad:
 		_pick(1)
 	elif inp.just("ui_accept"):
 		_pick(sel)
@@ -118,7 +119,7 @@ func _draw() -> void:
 		edge.a *= ca
 		UITheme.panel(self, r, fillc, edge, 8, 2)
 		var badge := Color(1, 0.9, 0.3, ca) if sel == i else Color(0.45, 0.45, 0.45, ca)
-		UITheme.head(self, "[%d]" % (i + 1), r.position.x, r.position.y + 10, 22, badge, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
+		UITheme.head(self, ui.input.hint("[%d]" % (i + 1), "[ < ]" if i == 0 else "[ > ]"), r.position.x, r.position.y + 10, 22, badge, HORIZONTAL_ALIGNMENT_CENTER, r.size.x)
 		var nc := Color(1, 1, 1, ca) if sel == i else Color(0.65, 0.65, 0.65, ca)
 		var nm := String(perk.name).to_upper()
 		UITheme.head(self, nm, r.position.x, r.position.y + 42, UITheme.fit(nm, 26, r.size.x - 20, UITheme.title_font()), nc,
@@ -132,10 +133,6 @@ func _draw() -> void:
 		for p in ui.game.player.active_run_perks:
 			names.append(p.name)
 		UITheme.text(self, "Active: " + ", ".join(names), 40, y0 + CARD_H + 36, 14, Color(0.3, 0.8, 0.5, 0.7 * a), HORIZONTAL_ALIGNMENT_CENTER, w - 80)
-	var hint := "LEFT/RIGHT or 1 / 2 to choose    ENTER confirm"
-	if ui.input.active_mode() == "gamepad":
-		hint = "D-PAD / BUMPERS choose    A confirm"
-	elif ui.input.active_mode() == "touch":
-		hint = "TAP a perk"
-	UITheme.text(self, hint, 0, h - 40, 13, Color(0.5, 0.5, 0.5, 0.8 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var hint: String = ui.input.hint("LEFT/RIGHT or 1 / 2 to choose    ENTER confirm", "D-Pad choose    A confirm", "TAP a perk")
+	UITheme.text(self, hint, 0, h - 40, 14, Color(0.62, 0.62, 0.62, 0.9 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.45)

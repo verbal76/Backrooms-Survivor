@@ -13,6 +13,8 @@ var slider_w := 170.0
 var rects: Array = []
 var hl_y := -1.0               # animated highlight centre
 var enter_t := 0.0             # seconds since the list was shown (row entrance animation)
+var max_rows := 0              # 0 = show every row; otherwise the list scrolls to keep the selection visible
+var scroll := 0
 var drag_idx := -1
 var pop := {}                  # item index -> pressed-flash seconds
 var sfx: Callable = Callable()  # called with "move" | "select" | "adjust"
@@ -156,8 +158,17 @@ func _play(what: String) -> void:
 
 # ---- drawing ----------------------------------------------------------------------------------
 
+func shown_rows() -> int:
+	return items.size() if max_rows <= 0 else mini(max_rows, items.size())
+
+
 func total_height() -> float:
-	return items.size() * row_h
+	return shown_rows() * row_h
+
+
+## How many rows fit into `avail` px (never fewer than 3).
+func rows_for(avail: float) -> int:
+	return clampi(int(avail / row_h), 3, maxi(3, items.size()))
 
 
 func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
@@ -169,7 +180,13 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 		pop[k] -= dt
 		if pop[k] <= 0.0:
 			pop.erase(k)
-	var target := top + sel * row_h + row_h * 0.5 - 2
+	var vis := shown_rows()
+	if sel < scroll:
+		scroll = sel
+	if sel >= scroll + vis:
+		scroll = sel - vis + 1
+	scroll = clampi(scroll, 0, maxi(0, items.size() - vis))
+	var target := top + (sel - scroll) * row_h + row_h * 0.5 - 2
 	hl_y = target if hl_y < 0.0 else lerpf(hl_y, target, minf(1.0, dt * 22.0))
 
 	# animated selection bar sits behind the rows
@@ -185,11 +202,14 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 		ci.draw_colored_polygon(PackedVector2Array([Vector2(cxr, cy - 6), Vector2(cxr - 7, cy), Vector2(cxr, cy + 6)]), UITheme.GOLD_BRIGHT)
 
 	for i in items.size():
+		if i < scroll or i >= scroll + vis:
+			rects.append(Rect2(-9999, -9999, 1, 1))       # keep rects[] aligned with items[]
+			continue
 		var it: Dictionary = items[i]
-		var delay := i * 0.04
+		var delay := (i - scroll) * 0.04
 		var a := clampf((enter_t - delay) / 0.22, 0.0, 1.0)
 		var slide := (1.0 - a) * 24.0
-		var y := top + i * row_h - 1 + 0.0
+		var y := top + (i - scroll) * row_h - 1 + 0.0
 		var row := Rect2(cx - half_w, y, half_w * 2, row_h - 4)
 		rects.append(row)
 		var is_sel := i == sel
@@ -241,3 +261,7 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 					vc = Color(0.55, 0.55, 0.55, a)
 				var shown := txt if it.kind == "toggle" else "<  %s  >" % txt
 				UITheme.head(ci, shown, cx - 16 + ox, ty, font_size, vc)
+	if scroll > 0:
+		UITheme.text(ci, "^  more", cx - half_w, top - 18.0, 12, UITheme.GOLD_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER, half_w * 2)
+	if scroll + vis < items.size():
+		UITheme.text(ci, "v  more", cx - half_w, top + vis * row_h, 12, UITheme.GOLD_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER, half_w * 2)

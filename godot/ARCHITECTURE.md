@@ -78,3 +78,20 @@ Items, orbs, props, chest rooms, portal, bombs' pickups. `spawn_drop(tile_pos, k
 
 ### Lighting (`game.lighting`)
 `light_level_at_player() -> float` (0..1, used for sanity), headlamp + battery, `CanvasModulate`, post-FX.
+
+## Platform, Steam Deck and quality (see docs/STEAMDECK.md)
+- `scripts/platform/platform.gd` (`const Platform = preload(...)`, no class_name so OTA patches keep working): `is_steam_deck()`,
+  `is_steamos()`, `is_proton()`, `is_big_picture()`, `is_deck_like()` from env vars (`SteamDeck`, `SteamOS`, `SteamGameId`,
+  `SteamTenfoot`, `STEAM_COMPAT_*`) and /etc/os-release. `GameOptions.apply_platform_defaults()` uses it (fullscreen, Medium quality,
+  UI 110%, 60 fps cap) before options.json is read, so a saved file always wins.
+- `scripts/platform/quality.gd`: Low / Medium / High presets. `Quality.apply(game, level)` calls `set_quality(preset)` on `game.fx` and
+  `game.lighting` (particle caps, motes, decals, ceiling lights, shadow filter, post-FX level) and sets `game.stream_radius`.
+- Options added: UI scale, high contrast, quality, frame limit (30/40/45/60/uncapped), vsync, auto-pause, rumble (+strength),
+  stick dead zone, system keyboard. `game.ui.apply_options()` re-applies everything with a runtime effect.
+- UI scale: menu pages scale themselves (`UIScreen.apply_layout`: the page lays out in a canvas of size / scale and is drawn
+  magnified); HUD, overlays and tip cards use `draw_set_transform` with `ui.hud_scale()`. `UITheme.MIN_FS` (12) is the smallest text.
+- Prompts: never hard-code key names in UI text. Use `game.input.hint(kb, pad, touch)`, `prompt(action)` or `fill("{action}")`;
+  with a controller only Xbox-style wording (A/B/X/Y, LB/RB, LT/RT, L3/R3, View, Menu, D-Pad, L4/L5/R4/R5) is ever returned.
+- Menu (Start) always pauses/resumes; View dismisses tips (hold = tips off); back grips are rebindable quick actions
+  (`quick_heal`, `quick_drink`, `quick_bomb`, `quick_lamp`). Rumble: `game.input.rumble(kind, scale)`.
+- Focus loss / Deck suspend: `ui.gd` pauses the run and mutes the Master bus; it resumes into the pause menu.

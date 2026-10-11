@@ -28,6 +28,7 @@ var _slowmo := 0.0
 var _flicker := 0.0
 var _shocks: Array = [{"pos": Vector2.ZERO, "t": 9.0, "dur": 0.7, "amp": 1.0}, {"pos": Vector2.ZERO, "t": 9.0, "dur": 0.7, "amp": 1.0}]
 var _shock_next := 0
+var quality := 2        # 0 = pass disabled, 1 = no grain / aberration / warp / dust, 2 = everything
 
 
 func _init() -> void:
@@ -43,7 +44,16 @@ func _init() -> void:
 
 func _set_enabled(v: bool) -> void:
 	enabled = v
-	visible = v
+	visible = v and quality > 0
+
+
+func set_quality(q: int) -> void:
+	quality = q
+	visible = enabled and q > 0
+	if mat:
+		mat.set_shader_parameter("grain_amount", GRAIN if q >= 2 else 0.0)
+		mat.set_shader_parameter("dust_intensity", DUST_INTENSITY if q >= 2 else 0.0)
+		mat.set_shader_parameter("haze_alpha", HAZE_ALPHA if q >= 2 else 0.0)      # skips the value-noise haze block
 
 
 ## Damage pulse: red edge flash + chromatic kick that decays over ~0.6 s.
@@ -102,12 +112,13 @@ func update_state(dt: float, sanity_pct: float, hp_pct: float, cam_px: Vector2, 
 		danger = 1.0 - hp_pct / 0.35
 	mat.set_shader_parameter("time", _time)
 	mat.set_shader_parameter("cam_px", cam_px)
+	var rich := quality >= 2
 	mat.set_shader_parameter("sanity_fx", vcr)
-	mat.set_shader_parameter("sanity_tint", tint)
+	mat.set_shader_parameter("sanity_tint", tint if rich else 0.0)
 	mat.set_shader_parameter("hp_danger", danger)
 	mat.set_shader_parameter("heartbeat", heartbeat_env)
 	mat.set_shader_parameter("hit_pulse", _pulse * _pulse)
-	mat.set_shader_parameter("aberration", _aber)
+	mat.set_shader_parameter("aberration", _aber if rich else 0.0)
 	mat.set_shader_parameter("slowmo", _slowmo)
 	mat.set_shader_parameter("flicker", _flicker)
 	var vp := get_viewport().get_visible_rect().size
