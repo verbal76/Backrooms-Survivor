@@ -34,13 +34,13 @@ signal perk_chosen(id: String)
 signal run_started
 
 # Lua startGame() difficulty tables (index = difficulty - 1)
-const DIFF_ENEMY_HP := [1.0, 1.0, 1.35, 1.8]
-const DIFF_ENEMY_DMG := [0.70, 1.20, 1.4, 2.0]
-const DIFF_ENEMY_SPD := [1.0, 1.0, 1.10, 1.20]
+const DIFF_ENEMY_HP := [1.0, 1.0, 1.15, 1.2]
+const DIFF_ENEMY_DMG := [0.65, 0.90, 1.1, 1.15]
+const DIFF_ENEMY_SPD := [0.95, 1.0, 1.03, 1.08]
 const DIFF_SANITY := [1.0, 1.0, 1.5, 2.0]
 const DIFF_HYDRATION := [0.9, 1.0, 1.3, 1.7]
-const DIFF_SPAWN := [1.5, 2.0, 2.5, 3.0]
-const DIFF_MAX_ENEMIES := [90, 100, 110, 130]
+const DIFF_SPAWN := [1.0, 1.3, 1.7, 2.2]
+const DIFF_MAX_ENEMIES := [60, 80, 100, 120]
 const DIFF_AMBIENT := [0.3, 0.2, 0.1, 0.05]
 const DAY_LENGTH := 120.0           # Lua dayLength (seconds); game.gd currently uses 300
 const INTRO_TIME := 3.0

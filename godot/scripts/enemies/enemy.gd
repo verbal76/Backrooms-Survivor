@@ -13,6 +13,9 @@ const HUNT_MUL := 0.75                     # huntMul / searchMul / wanderMul
 const SEARCH_MUL := 0.5
 const WANDER_MUL := 0.45
 const HIT_FLASH_TIME := 0.15
+const LATE_WAVE := 8                       # BALANCE: extra scaling starts after this wave
+const LATE_HP := 0.06
+const LATE_DMG := 0.03
 
 # ---- identity / stats (public contract: tile_pos, radius, hp, kind, take_damage) ----
 var game
@@ -109,10 +112,12 @@ func setup(p_game, p_mgr, p_kind: String, t: Dictionary, p_tile_pos: Vector2, wa
 	noise_attract = t.noise
 	light_fear = t.fear
 	# difficulty scaling by day (the Lua "baby-stepped" values)
-	max_hp = floorf(t.hp * (1.0 + wave * 0.05) * hp_mult)
+	# BALANCE: past wave LATE_WAVE the per-day growth doubles so a strong build is eventually outpaced
+	var late: float = maxf(0.0, wave - LATE_WAVE)
+	max_hp = floorf(t.hp * (1.0 + wave * 0.05 + late * LATE_HP) * hp_mult)
 	hp = max_hp
 	speed = t.speed * (1.0 + wave * 0.01) * spd_mult
-	dmg = int(floorf(t.dmg * (1.0 + wave * 0.035) * dmg_mult))
+	dmg = int(floorf(t.dmg * (1.0 + wave * 0.035 + late * LATE_DMG) * dmg_mult))
 	slide_pref = 1 if randf() > 0.5 else -1
 	los_timer = randf() * 0.2
 	phrase_timer = randf() * 10.0

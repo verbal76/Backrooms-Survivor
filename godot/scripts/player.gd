@@ -14,7 +14,7 @@ const PERK_EVERY_N_LEVELS := 2
 # Player.STATS
 const S := {
 	"hp": 100.0, "invuln_time": 1.0,
-	"stamina": 100.0, "stamina_regen": 4.0, "sprint_cost": 20.0,
+	"stamina": 100.0, "stamina_regen": 7.0, "sprint_cost": 16.0,
 	"sanity": 100.0, "sanity_drain": 0.25, "sanity_light_min": 0.2, "sanity_regen_mult": 4.0,
 	"hydration": 100.0, "hydration_drain": 0.5, "hydration_sprint": 1.5,
 	"base_speed": 3.5, "sprint_mult": 1.6, "accel": 18.0, "decel": 14.0,
@@ -23,7 +23,7 @@ const S := {
 	"almond_water": 3, "bandages": 2, "food": 0, "batteries": 2,
 	"start_xp_need": 10, "xp_scaling": 1.5,
 	"lvl_hp_bonus": 10.0, "lvl_hp_heal": 20.0, "lvl_stamina_bonus": 5.0, "lvl_sanity_restore": 20.0,
-	"almond_hydra": 40.0, "almond_sanity": 15.0, "almond_hp": 10.0,
+	"dehydration_dps": 1.0, "almond_hydra": 40.0, "almond_sanity": 15.0, "almond_hp": 10.0,
 	"bandage_hp": 30.0, "food_stamina": 40.0, "food_sanity": 10.0,
 }
 const STREAK_THRESHOLDS := [[5, 1.2], [10, 1.5], [20, 2.0], [50, 3.0]]
@@ -126,6 +126,8 @@ func step(dt: float, input_dir: Vector2, want_sprint: bool, aim_world: Vector2, 
 		sanity += (light_level - S.sanity_light_min) * S.sanity_regen_mult * dt
 	sanity = clampf(sanity, 0.0, max_sanity)
 
+	if hydration <= 0.0 and hp > 1.0:   # BALANCE: dehydration now hurts (never lethal on its own)
+		hp = maxf(1.0, hp - S.dehydration_dps * dt)
 	hydration = maxf(0.0, hydration - S.hydration_drain * hydration_drain_mult * (S.hydration_sprint if sprinting else 1.0) * dt)
 
 	# noise: what enemies track
