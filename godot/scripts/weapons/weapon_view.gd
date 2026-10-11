@@ -57,8 +57,12 @@ func _draw() -> void:
 	if tex:
 		var sc := TARGET_LEN / float(tex.get_width()) * (1.0 + pop * 0.25)
 		var flip := -1.0 if cos(wep_angle) < 0.0 else 1.0   # never draw the gun upside down
-		draw_set_transform(grip, draw_angle, Vector2(sc, sc * flip))
-		draw_texture(tex, Vector2(-tex.get_width() * 0.25, -tex.get_height() * 0.5))
+		# Mirror with a negative rect height instead of a negative transform scale: a negative scale in
+		# draw_set_transform shifted/inverted the sprite on some angles (gun drawn backwards).
+		var tw: float = tex.get_width() * sc
+		var th: float = tex.get_height() * sc
+		draw_set_transform(grip, draw_angle, Vector2.ONE)
+		draw_texture_rect(tex, Rect2(-tw * 0.25, -th * 0.5 * flip, tw, th * flip), false)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		draw_line(grip, grip + wf * TARGET_LEN * 0.75, wep.color, 3.0 * Z)

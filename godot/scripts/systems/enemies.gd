@@ -8,11 +8,11 @@ const Pathing = preload("res://scripts/enemies/pathing.gd")
 
 ## Enemy type table (Enemies.types). `idx` is the Lua typeIdx - 1.
 const TYPES := {
-	"hound":        {"idx": 0, "hp": 15, "speed": 3.2, "dmg": 12, "radius": 0.35, "scale": 0.4,  "color": Color(0.85, 0.15, 0.1),  "xp": 2, "drop": 0.12, "noise": 2.5, "fear": 0.6},
-	"crawler":      {"idx": 1, "hp": 50, "speed": 0.9, "dmg": 20, "radius": 0.5,  "scale": 0.4,  "color": Color(0.2, 0.7, 0.15),   "xp": 4, "drop": 0.2,  "noise": 1.5, "fear": 0.2},
-	"wretch":       {"idx": 2, "hp": 10, "speed": 4.0, "dmg": 5,  "radius": 0.25, "scale": 0.65, "color": Color(0.95, 0.85, 0.2),  "xp": 1, "drop": 0.08, "noise": 2.0, "fear": 0.6},
-	"shade":        {"idx": 3, "hp": 20, "speed": 2.0, "dmg": 18, "radius": 0.3,  "scale": 0.7,  "color": Color(0.35, 0.15, 0.55), "xp": 3, "drop": 0.15, "noise": 1.0, "fear": 1.0},
-	"skin stealer": {"idx": 4, "hp": 80, "speed": 1.5, "dmg": 35, "radius": 0.55, "scale": 1.25, "color": Color(0.9, 0.4, 0.15),   "xp": 8, "drop": 0.3,  "noise": 1.5, "fear": 0.0},
+	"hound":        {"idx": 0, "reach": 1.0, "windup": 0.22, "recover": 0.7, "hp": 15, "speed": 3.2, "dmg": 12, "radius": 0.35, "scale": 0.4,  "color": Color(0.85, 0.15, 0.1),  "xp": 2, "drop": 0.12, "noise": 2.5, "fear": 0.6},
+	"crawler":      {"idx": 1, "reach": 1.7, "windup": 0.5, "recover": 0.9, "hp": 50, "speed": 0.9, "dmg": 20, "radius": 0.5,  "scale": 0.4,  "color": Color(0.2, 0.7, 0.15),   "xp": 4, "drop": 0.2,  "noise": 1.5, "fear": 0.2},
+	"wretch":       {"idx": 2, "reach": 0.75, "windup": 0.16, "recover": 0.6, "hp": 10, "speed": 4.0, "dmg": 5,  "radius": 0.25, "scale": 0.65, "color": Color(0.95, 0.85, 0.2),  "xp": 1, "drop": 0.08, "noise": 2.0, "fear": 0.6},
+	"shade":        {"idx": 3, "reach": 1.0, "windup": 0.3, "recover": 0.8, "hp": 20, "speed": 2.0, "dmg": 18, "radius": 0.3,  "scale": 0.7,  "color": Color(0.35, 0.15, 0.55), "xp": 3, "drop": 0.15, "noise": 1.0, "fear": 1.0},
+	"skin stealer": {"idx": 4, "reach": 1.6, "windup": 0.45, "recover": 1.0, "hp": 80, "speed": 1.5, "dmg": 35, "radius": 0.55, "scale": 1.25, "color": Color(0.9, 0.4, 0.15),   "xp": 8, "drop": 0.3,  "noise": 1.5, "fear": 0.0},
 }
 const KINDS := ["hound", "crawler", "wretch", "shade", "skin stealer"]
 const SHEET_FILES := {
@@ -332,8 +332,6 @@ func _player_contact(ppos: Vector2) -> void:
 		if e.tile_pos.distance_to(ppos) < e.radius + PLAYER_BODY_R:
 			if Pathing.has_los(game.map, e.tile_pos, ppos):
 				e.touch_player(ppos)
-				if game.state != "playing":
-					return
 
 
 ## Headlamp beam burns light-fearing enemies (main.lua "HEADLAMP LIGHT DAMAGE", 1.25 hp/s).

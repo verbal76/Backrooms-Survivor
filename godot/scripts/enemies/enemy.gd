@@ -60,6 +60,15 @@ var kb_vel := Vector2.ZERO
 var stun := 0.0
 var facing := 0.0
 var attack_pulse := 0.0
+# melee attack: wind-up (telegraph) -> strike (damage at the legs/pincers' reach) -> recover
+var reach := 1.2
+var windup := 0.3
+var recover := 0.8
+var atk_phase := ""          # "" | "windup" | "recover"
+var atk_t := 0.0
+var atk_dir := Vector2.RIGHT
+var slash_t := 0.0
+const SLASH_TIME := 0.22
 var alert_pulse := 0.0
 var hurt_snd_cd := 0.0
 var phrase_timer := 0.0
@@ -88,6 +97,9 @@ func setup(p_game, p_mgr, p_kind: String, t: Dictionary, p_tile_pos: Vector2, wa
 	_last_pos = p_tile_pos
 	target = p_tile_pos
 	radius = t.radius
+	reach = t.get("reach", t.radius + 0.7)
+	windup = t.get("windup", 0.3)
+	recover = t.get("recover", 0.8)
 	scale_mult = t.scale
 	tint = t.color
 	xp = t.xp
@@ -297,6 +309,8 @@ func tick(dt: float, light: float) -> void:
 		if randf() < 0.5 and dist < 15.0:
 			_play_phrase(dist)
 
+	_attack_tick(dt, to_p, dist, can_see)
+
 	var mv := Vector2.ZERO
 	var spd := speed * dt
 	path_timer -= dt
@@ -305,7 +319,9 @@ func tick(dt: float, light: float) -> void:
 		"hunt":
 			if dist > 0.1:
 				if can_see:
-					mv = to_p / dist * spd * HUNT_MUL
+					# keep the player at leg's length instead of walking onto them
+					if dist > reach * 0.8:
+						mv = to_p / dist * spd * HUNT_MUL
 					last_seen = pp
 				elif player_moving and has_heard:
 					mv = _steer_toward(last_heard, 0.3) * spd * 0.85 * HUNT_MUL
@@ -357,6 +373,8 @@ func tick(dt: float, light: float) -> void:
 	if stun > 0.0:
 		stun -= dt
 		mv *= 0.3
+	if atk_phase == "windup":
+		mv = Vector2.ZERO
 	if mv != Vector2.ZERO:
 		_try_move(mv)
 	if kb_vel.length_squared() > 0.01:
@@ -477,25 +495,51 @@ func unstick() -> void:
 func touch_player(pl_pos: Vector2) -> void:
 	var d := pl_pos - tile_pos
 	var dist := d.length()
-	# touching an enemy alerts it
+	# touching an enemy alerts it, and a body overlapping the player is shoved back to leg's length
 	alert_level = 100.0
 	has_seen = true
 	last_seen = pl_pos
 	last_seen_timer = 0.0
-	var landed: bool = game.player.invuln_time <= 0.0
-	if landed:
-		game.damage_player(float(dmg), position)
-		attack_pulse = 0.3
-		_play_attack_sound()
-	# bounce back so the enemy doesn't sit inside the player (smooth slide instead of the Lua teleport)
 	if dist > 0.01:
-		var push_dist := 1.2 + radius
 		var dir := -d / dist
-		var probe := tile_pos + dir * push_dist
-		if _wall(probe.x, probe.y):
-			push_dist = 0.5
-		kb_vel += dir * push_dist * 12.0
-		stun = maxf(stun, 0.05)
+		kb_vel += dir * (reach * 0.8 - dist + 0.3) * 8.0
+
+
+## Melee attack state machine (Lua only had overlap damage: a big spider had to stand on you).
+func _attack_tick(dt: float, to_p: Vector2, dist: float, can_see: bool) -> void:
+	slash_t = maxf(0.0, slash_t - dt)
+	if atk_phase == "windup":
+		atk_t -= dt
+		if to_p.length() > 0.01:
+			atk_dir = to_p.normalized()
+		if atk_t <= 0.0:
+			_strike(to_p, dist)
+			atk_phase = "recover"
+			atk_t = recover
+	elif atk_phase == "recover":
+		atk_t -= dt
+		if atk_t <= 0.0:
+			atk_phase = ""
+	elif (state == "hunt" or dist < reach * 0.6) and can_see and dist <= reach and game.state == "playing":
+		atk_phase = "windup"
+		atk_t = windup
+		atk_dir = to_p.normalized() if dist > 0.01 else Vector2.RIGHT
+		alert_pulse = 0.2
+	queue_redraw()
+
+
+func _strike(to_p: Vector2, dist: float) -> void:
+	slash_t = SLASH_TIME
+	attack_pulse = 0.3
+	kb_vel += atk_dir * 3.0                       # lunge forward a step
+	var pl = game.player
+	var d_now: float = (pl.tile_pos - tile_pos).length()
+	if d_now <= reach + 0.3 and Pathing.has_los(game.map, tile_pos, pl.tile_pos) and pl.invuln_time <= 0.0:
+		game.damage_player(float(dmg), position)
+		game.fx.burst(pl.position, "hit", atk_dir)
+		_play_attack_sound()
+	else:
+		game.fx.burst(position + atk_dir * reach * game.TILE, "smoke", atk_dir)   # swing and miss
 
 
 # ---------------------------------------------------------------------------------------------
@@ -531,6 +575,15 @@ func _animate(dt: float, to_p: Vector2, mv: Vector2) -> void:
 	_flash.scale = _sprite.scale
 	_flash.modulate.a = clampf(hit_flash / HIT_FLASH_TIME, 0.0, 1.0) * 0.85
 	_sprite.rotation = sin(walk_phase * 0.5) * 0.05
+	# telegraph: rear back during the wind-up, snap forward on the strike
+	var lunge := Vector2.ZERO
+	if atk_phase == "windup":
+		lunge = -atk_dir * game.TILE * radius * 0.35 * (1.0 - atk_t / maxf(windup, 0.01))
+	elif slash_t > 0.0:
+		lunge = atk_dir * game.TILE * radius * 0.6 * (slash_t / SLASH_TIME)
+	_sprite.position = lunge
+	_flash.position = lunge
+	_sprite.self_modulate = Color(1.0, 0.55, 0.5) if atk_phase == "windup" else Color.WHITE
 	_flash.rotation = _sprite.rotation
 
 	# shades fade out in darkness (harder to spot), min alpha 0.08
@@ -556,6 +609,17 @@ func _update_frame() -> void:
 
 
 func _draw() -> void:
+	if slash_t > 0.0 and not dead:
+		# two claw swipes sweeping across the front of the body out to the attack reach
+		var k := slash_t / SLASH_TIME
+		var ang := atk_dir.angle()
+		var rr: float = reach * game.TILE
+		for side in [-1.0, 1.0]:
+			var a0: float = ang + side * (0.55 - 0.9 * (1.0 - k))
+			draw_arc(Vector2.ZERO, rr * (0.55 + 0.45 * (1.0 - k)), a0 - 0.35, a0 + 0.35, 10, Color(1, 0.85, 0.8, 0.9 * k), 3.0 + 3.0 * k)
+	if atk_phase == "windup":
+		# faint reach ring so the strike zone is readable
+		draw_arc(Vector2.ZERO, reach * game.TILE, atk_dir.angle() - 0.6, atk_dir.angle() + 0.6, 12, Color(1, 0.2, 0.1, 0.35), 2.0)
 	if _shadow_pts.size() > 2:
 		var al := 0.35
 		if dead:
