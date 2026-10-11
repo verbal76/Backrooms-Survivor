@@ -5,6 +5,7 @@ extends Node
 ##      play_slice / play_fade / loop_start / loop_move / loop_stop (extras, see below).
 ## Buses: Master > Music (lowpass), SFX (reverb + lowpass), Cue (heartbeat/whispers, never scaled by SFX).
 
+const SynthLib = preload("res://scripts/audio/synth.gd")
 const SoundBank = preload("res://scripts/audio/sound_bank.gd")
 const MusicDirector = preload("res://scripts/audio/music_director.gd")
 
@@ -46,6 +47,12 @@ var _lp_music: AudioEffectLowPassFilter
 var _listener: AudioListener2D
 var _in_run := false
 var _hb_pitch := 1.0
+var _duck := 0.0                        # 0..1 music dip after big impacts (explosions, level-ups)
+var _duck_dirty := false
+var _music_lin := DEFAULT_MUSIC
+var _warm: Array = []                   # synth sounds still to pre-render (one per frame, avoids a first-hit hitch)
+var _dub_t := -1.0                      # pending second heartbeat thump (lub-DUB)
+var _dub_vol := 0.0
 
 
 func _ready() -> void:
@@ -61,6 +68,9 @@ func _ready() -> void:
 		_voices.append(_new_voice(true))
 	for i in FLAT_VOICES:
 		_voices.append(_new_voice(false))
+	for kind in SynthLib.NAMES:
+		for v in range(1, int(SynthLib.NAMES[kind]) + 1):
+			_warm.append("%s_%d" % [kind, v])
 	_heartbeat = _make_cue("heartbeat")
 	_whisper_m = _make_cue("male_whispers")
 	_whisper_f = _make_cue("female_whispers")
@@ -139,7 +149,8 @@ func _apply_volumes() -> void:
 	var mus := _opt(["music_volume", "musicVolume", "music"], DEFAULT_MUSIC)
 	var sfx := _opt(["sfx_volume", "sfxVolume", "sfx"], DEFAULT_SFX)
 	_set_bus("Master", master)
-	_set_bus("Music", mus)
+	_music_lin = mus
+	_set_bus("Music", mus * (1.0 - 0.75 * _duck))
 	_set_bus("SFX", sfx)
 	_set_bus("Cue", 1.0)
 
@@ -377,6 +388,22 @@ func _on_died() -> void:
 
 func _on_player_damaged(amount: float) -> void:
 	_muffle = clampf(maxf(_muffle, 0.35 + amount / 40.0), 0.0, 1.0)
+	_duck = maxf(_duck, 0.5)
+	play("fx_hurt", null, clampf(0.5 + amount / 40.0, 0.5, 1.0), randf_range(0.9, 1.1))
+
+
+## Duck the music for a beat (impact stinger room): amount 0..1, recovers over ~1 s.
+func duck(amount := 0.6) -> void:
+	_duck = maxf(_duck, clampf(amount, 0.0, 1.0))
+
+
+## Heartbeat thump synced with the screen pulse (called by the lighting system on each beat at low HP).
+func heartbeat_thump(strength := 1.0) -> void:
+	if not _in_run:
+		return
+	play("fx_thump", null, 0.55 * strength, 1.0)
+	_dub_t = 0.2
+	_dub_vol = 0.38 * strength
 
 
 func _on_footstep(sprinting: bool) -> void:
@@ -395,6 +422,16 @@ func _on_footstep(sprinting: bool) -> void:
 
 func _process(dt: float) -> void:
 	_clock += dt
+	if not _warm.is_empty():
+		bank.get_stream(_warm.pop_back())
+	if _dub_t >= 0.0:
+		_dub_t -= dt
+		if _dub_t < 0.0:
+			play("fx_thump", null, _dub_vol, 0.85)
+	if _duck > 0.0 or _duck_dirty:
+		_duck = maxf(0.0, _duck - dt / 1.1)
+		_duck_dirty = _duck > 0.0
+		_set_bus("Music", _music_lin * (1.0 - 0.75 * _duck))
 	for v in _voices:
 		if not v.p.playing:
 			if v.key != "" and not (v.key.begins_with("loop:")):

@@ -76,6 +76,7 @@ func setup(g) -> void:
 	game.player.add_child(glow)
 
 	post = PostFx.new()
+	post.camera = game.camera
 	add_child(post)
 
 	for i in FIXTURE_POOL:
@@ -304,7 +305,10 @@ func _heartbeat(dt: float, hp_pct: float, sanity_pct: float) -> float:
 	var stress := maxf(clampf(1.0 - hp_pct / 0.4, 0.0, 1.0), clampf(1.0 - sanity_pct / 0.3, 0.0, 1.0) * 0.8)
 	if stress <= 0.0:
 		return 0.0
+	var prev_phase := _heart_phase
 	_heart_phase = fmod(_heart_phase + dt * (1.1 + stress * 1.5), 1.0)
+	if _heart_phase < prev_phase and stress > 0.3 and game.audio and game.audio.has_method("heartbeat_thump"):
+		game.audio.heartbeat_thump(stress)         # audible lub-dub locked to the screen pulse
 	var ph := _heart_phase
 	var beat := exp(-ph * 14.0) + 0.6 * exp(-maxf(0.0, ph - 0.28) * 14.0) * (1.0 if ph >= 0.28 else 0.0)
 	return clampf(beat, 0.0, 1.0) * stress

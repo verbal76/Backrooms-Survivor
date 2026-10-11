@@ -307,6 +307,7 @@ func _try_fire(p) -> void:
 		swinging = true
 		swing_timer = wep.rate * 0.6
 		game.audio.play("swing_sound", origin_px, 0.6, _rng.randf_range(0.92, 1.08))
+		game.fx.swing(origin_px, angle, float(wep.reach) * TILE, wep.name)
 		if not miss:
 			_melee_hit(p, wep, angle)
 	else:
@@ -338,7 +339,7 @@ func _shoot(p, wep: Dictionary, angle: float, dud: bool) -> void:
 			})
 
 	# juice
-	game.fx.burst(muzzle, "muzzle", dir)
+	game.fx.gunshot(muzzle, dir, wep.name)
 	game.fx.shake(j.shake * (1.0 if not dud else 0.6), j.time)
 	_view.recoil = j.recoil
 	_view.flash_t = 0.06
@@ -389,6 +390,7 @@ func _melee_hit(p, wep: Dictionary, angle: float) -> void:
 		var dead: bool = not is_instance_valid(e) or e.hp <= 0.0
 		game.fx.burst(epx, "hit", dir)
 		game.fx.blood(epx, 1.0 if dead else 0.6)
+		game.fx.melee_hit(epx, dir, wep.name, dead)
 		if dead:
 			kills += 1
 			game.fx.burst(epx, "gib", dir)
@@ -475,6 +477,7 @@ func _bullet_hit(b: Dictionary, e, acc: Dictionary) -> void:
 	e.take_damage(float(b.dmg), dir * 0.5)
 	var dead: bool = not is_instance_valid(e) or e.hp <= 0.0
 	game.fx.burst(b.pos * TILE, "hit", dir)
+	game.fx.flesh_hit(b.pos * TILE, dir)
 	game.fx.blood(b.pos * TILE, 0.5 if not dead else 1.0)
 	if dead:
 		game.fx.burst(epx, "gib", dir)
@@ -488,6 +491,7 @@ func _bullet_hit(b: Dictionary, e, acc: Dictionary) -> void:
 
 
 func _impact(pos: Vector2, dir: Vector2) -> void:
+	game.fx.wall_hit(pos * TILE, -dir)
 	game.fx.burst(pos * TILE, "spark", -dir)
 	if _rng.randf() < 0.5:
 		game.fx.burst(pos * TILE, "smoke", -dir)
@@ -503,6 +507,8 @@ func _update_casings(dt: float) -> void:
 		c.rot += c.spin * dt
 		c.spin *= maxf(0.0, 1.0 - 4.0 * dt)
 		if c.life <= 0.0:
+			if _rng.randf() < 0.5:
+				game.fx.casing_land(c.pos, c.color)
 			casings.remove_at(i)
 		else:
 			i += 1

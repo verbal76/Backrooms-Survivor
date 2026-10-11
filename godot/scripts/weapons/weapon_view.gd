@@ -25,9 +25,17 @@ func _ready() -> void:
 	_rng.randomize()
 
 
-func muzzle_offset_px(wep: Dictionary) -> float:
-	var tip: float = BARREL_TIP.get(wep.name, 8.0)
-	return (10.0 + tip + 3.0) * Z   # grip (13z - 3z) + barrel + 3, as in the Lua flash
+## Hand anchors measured from the player sprite (px at the drawn scale): the gloves sit at the front corners
+## of the body, FWD ahead of the centre and +-LAT to the sides. Melee is held in the right hand (+side);
+## guns are two-handed along the body midline, so the barrel tip, muzzle flash and bullets line up.
+const HAND_FWD := 14.0
+const HAND_LAT := 18.0
+const GUN_GRIP_FWD := 16.0
+const SPRITE_BACK := 0.25            # share of the sprite that sits behind the grip (see draw rect)
+
+
+func muzzle_offset_px(_wep: Dictionary) -> float:
+	return GUN_GRIP_FWD + (1.0 - SPRITE_BACK) * TARGET_LEN
 
 
 func _draw() -> void:
@@ -45,11 +53,18 @@ func _draw() -> void:
 		t = 1.0 - (1.0 - t) * (1.0 - t)              # ease-out for a snappier slash
 		wep_angle = a - SWING_ARC / 2.0 + t * SWING_ARC
 	var wf := Vector2.from_angle(wep_angle)
+	var fwd := Vector2.from_angle(a)
 	var side := Vector2(-sin(a), cos(a))
-	var side_off: float = 3.0 if melee else 0.0
-	var hand := wf * 13.0 * Z + side * side_off * Z
-	hand -= Vector2.from_angle(a) * recoil * 5.0           # recoil kick
-	var grip := hand - wf * 3.0 * Z
+	var hand: Vector2
+	if melee:
+		if wp.swinging:
+			hand = wf * sqrt(HAND_FWD * HAND_FWD + HAND_LAT * HAND_LAT)     # the hand orbits the body through the swing
+		else:
+			hand = fwd * HAND_FWD + side * HAND_LAT
+	else:
+		hand = fwd * GUN_GRIP_FWD
+		hand -= fwd * recoil * 5.0                          # recoil kick
+	var grip := hand
 
 	# sprite
 	var tex: Texture2D = textures.get(wep.name)
@@ -57,12 +72,12 @@ func _draw() -> void:
 	if tex:
 		var sc := TARGET_LEN / float(tex.get_width()) * (1.0 + pop * 0.25)
 		var flip := -1.0 if cos(wep_angle) < 0.0 else 1.0   # never draw the gun upside down
-		# Mirror with a negative rect height instead of a negative transform scale: a negative scale in
-		# draw_set_transform shifted/inverted the sprite on some angles (gun drawn backwards).
+		# Mirror (so the gun is never upside down) with a -1 y scale about the grip. A negative rect height
+		# instead makes draw_texture_rect shift the sprite by its full height (weapon "levitating" off the hand).
 		var tw: float = tex.get_width() * sc
 		var th: float = tex.get_height() * sc
-		draw_set_transform(grip, draw_angle, Vector2.ONE)
-		draw_texture_rect(tex, Rect2(-tw * 0.25, -th * 0.5 * flip, tw, th * flip), false)
+		draw_set_transform(grip, draw_angle, Vector2(1.0, flip))
+		draw_texture_rect(tex, Rect2(-tw * SPRITE_BACK, -th * 0.5, tw, th), false)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		draw_line(grip, grip + wf * TARGET_LEN * 0.75, wep.color, 3.0 * Z)
@@ -76,12 +91,12 @@ func _draw() -> void:
 		for k in range(6):
 			var r := reach_px * (0.45 + 0.1 * k)
 			var alpha := 0.32 * fade * (0.4 + 0.12 * k)
-			draw_arc(Vector2.ZERO + side * side_off * Z, r, wep_angle - trail, wep_angle, 20,
+			draw_arc(Vector2.ZERO, r, wep_angle - trail, wep_angle, 20,
 				Color(0.9, 0.95, 1.0, alpha), (2.0 + k * 0.6) * Z * 0.5)
 
 	# muzzle flash (starburst + glow) at the barrel tip
 	if flash_t > 0.0 and wep.type == "ranged":
-		var fm := grip + wf * (wep_tip(wep) - 10.0 * Z)
+		var fm := fwd * muzzle_offset_px(wep)
 		var big: float = flash_size * Z
 		for i in range(6):
 			var ra := wep_angle + i * PI / 3.0 + _rng.randf() * 0.3

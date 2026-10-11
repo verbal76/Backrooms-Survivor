@@ -25,6 +25,10 @@ uniform float hp_danger : hint_range(0.0, 1.0) = 0.0;     // low-HP red vignette
 uniform float heartbeat : hint_range(0.0, 1.0) = 0.0;     // pulses the vignette (0..1 envelope)
 uniform float hit_pulse : hint_range(0.0, 1.0) = 0.0;     // damage taken, decays in script
 uniform float aberration : hint_range(0.0, 1.0) = 0.0;    // extra chromatic aberration (hits, insanity)
+uniform float slowmo : hint_range(0.0, 1.0) = 0.0;        // near-miss slow-mo: desaturate + punch contrast
+uniform vec4 shock = vec4(0.5, 0.5, 0.0, 0.0);            // shockwave: centre uv, ring radius (uv.y units), strength (0 = off)
+uniform vec4 shock2 = vec4(0.5, 0.5, 0.0, 0.0);           // second concurrent shockwave
+uniform float flicker = 0.0;                              // 0..1 low-sanity light stutter (multiplies exposure down)
 
 float hash21(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -81,6 +85,24 @@ void fragment() {
 	}
 	uv.x += shift;
 
+	// ---- low sanity: slow breathing warp of the whole image (grows as sanity falls) ----
+	if (sanity_tint > 0.0) {
+		float w = sanity_tint * sanity_tint * 0.0045 + sanity_fx * 0.002;
+		uv += vec2(sin(uv.y * 17.0 + time * 1.7), cos(uv.x * 13.0 + time * 1.3)) * w;
+	}
+
+	// ---- shockwaves (bomb): refract the image around an expanding ring ----
+	for (int i = 0; i < 2; i++) {
+		vec4 sw = i == 0 ? shock : shock2;
+		if (sw.w > 0.0) {
+			vec2 sd = (uv - sw.xy) * vec2(aspect.x, 1.0);
+			float sl = length(sd);
+			float ring = sl - sw.z;
+			float prof = exp(-ring * ring * 380.0) * sw.w;
+			uv -= normalize(sd + vec2(0.0001)) * prof * 0.045 / vec2(aspect.x, 1.0);
+		}
+	}
+
 	// ---- heartbeat / hit "breathing" zoom toward the centre ----
 	vec2 dc = uv - vec2(0.5);
 	float zoom = heartbeat * 0.006 + hit_pulse * 0.012;
@@ -98,7 +120,7 @@ void fragment() {
 		c = texture(screen_tex, uv).rgb;
 	}
 
-	c *= exposure;
+	c *= exposure * (1.0 - flicker * 0.55);
 
 	// ---- haze: slow low-frequency luminous noise, screen-space with camera parallax ----
 	if (haze_alpha > 0.0) {
@@ -116,12 +138,12 @@ void fragment() {
 		c += vec3(1.0, 0.97, 0.85) * dm * dust_intensity * 0.12 * smoothstep(0.08, 0.5, l);
 	}
 
-	c = mix(c, vec3(l), clamp(desat + sanity_fx * 0.35 + hp_danger * 0.15, 0.0, 1.0));
-	c = (c - 0.5) * (contrast + sanity_fx * 0.08) + 0.5;
+	c = mix(c, vec3(l), clamp(desat + sanity_fx * 0.35 + hp_danger * 0.15 + slowmo * 0.45, 0.0, 1.0));
+	c = (c - 0.5) * (contrast + sanity_fx * 0.08 + slowmo * 0.12) + 0.5;
 
 	// ---- vignette ----
 	vec2 d = uv - vec2(0.5);
-	float v = smoothstep(0.85, 0.25, dot(d, d) * 1.5);
+	float v = 1.0 - smoothstep(0.25, 0.85, dot(d, d) * 1.5);   // (reversed-edge smoothstep is undefined in GLSL)
 	float vs = clamp(vignette_strength + sanity_fx * 0.25 + heartbeat * 0.12, 0.0, 1.0);
 	c *= mix(1.0 - vs, 1.0, v);
 
