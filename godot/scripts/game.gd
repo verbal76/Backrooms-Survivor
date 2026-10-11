@@ -16,9 +16,10 @@ const SYSTEM_PATHS := {
 	"weapons": "res://scripts/systems/weapons.gd",
 	"enemies": "res://scripts/systems/enemies.gd",
 	"objects": "res://scripts/systems/objects.gd",
+	"traps": "res://scripts/systems/traps.gd",
 	"ui": "res://scripts/systems/ui.gd",
 }
-const SYSTEM_ORDER := ["input", "audio", "fx", "lighting", "weapons", "enemies", "objects", "ui"]
+const SYSTEM_ORDER := ["input", "audio", "fx", "lighting", "weapons", "enemies", "objects", "traps", "ui"]
 
 signal state_changed(new_state: String)
 signal enemy_killed(tile_pos: Vector2, kind: String, xp: int)
@@ -36,6 +37,7 @@ var lighting: Node
 var weapons: Node
 var enemies: Node
 var objects: Node
+var traps: Node
 var ui: Node
 var systems: Array[Node] = []
 

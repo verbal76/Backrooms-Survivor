@@ -16,3 +16,5 @@ Post Apoc Office, Abandoned Office, Low Poly 3D PSX Horror, Glass Theme Game UI 
 
 Planned, to be added with their files: "Top Down Horror Assets" by AIA (free use, credit appreciated),
 Free Crow Sprite (CC0).
+
+Added later (CC0): "Free Crow Sprite" crow sprite sheet (`assets/enemies/crow_sheet.png`), provided by the project owner.
