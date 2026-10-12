@@ -72,6 +72,9 @@ static func text(ci: CanvasItem, s: String, x: float, y: float, size: int, col: 
 	size = maxi(size, MIN_FS)
 	col = legible(col, size)
 	var base := y + font.get_ascent(size)
+	var segs := Glyphs.segments(s)
+	if not segs.is_empty():
+		return _text_glyphs(ci, segs, x, y, size, col, align, width, font, shadow)
 	if shadow:
 		if high_contrast:
 			ci.draw_string_outline(font, Vector2(x, base), s, align, width, size, 4, Color(0, 0, 0, minf(1.0, col.a)))
@@ -103,6 +106,9 @@ static func text_w(s: String, size: int, font: Font = null) -> float:
 	if font == null:
 		font = body_font()
 	size = maxi(size, MIN_FS)
+	var segs := Glyphs.segments(s)
+	if not segs.is_empty():
+		return _segs_w(segs, size, font)
 	return font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 
 
@@ -110,7 +116,7 @@ static func text_w(s: String, size: int, font: Font = null) -> float:
 static func fit(s: String, size: int, max_w: float, font: Font = null) -> int:
 	if font == null:
 		font = body_font()
-	var w := font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	var w := text_w(s, size, font)
 	if w <= max_w or w <= 0.0:
 		return size
 	return maxi(MIN_FS, int(floor(size * max_w / w)))
@@ -129,6 +135,9 @@ static func wrapped(ci: CanvasItem, s: String, x: float, y: float, width: float,
 		font = body_font()
 	size = maxi(size, MIN_FS)
 	col = legible(col, size)
+	if not Glyphs.segments(s).is_empty():
+		_wrapped_glyphs(ci, s, x, y, width, size, col, align, font)
+		return
 	var base := y + font.get_ascent(size)
 	if high_contrast:
 		ci.draw_multiline_string_outline(font, Vector2(x, base), s, align, width, size, -1, 4, Color(0, 0, 0, col.a))
@@ -210,3 +219,88 @@ static func vignette(ci: CanvasItem, size: Vector2, strength: float, col := Colo
 		_vig.width = 128
 		_vig.height = 128
 	ci.draw_texture_rect(_vig, Rect2(Vector2.ZERO, size), false, Color(col.r, col.g, col.b, clampf(strength, 0.0, 1.0)))
+
+
+# ---- controller glyph rendering (see glyphs.gd): only reached while a controller is the active input ----
+
+static func _seg_w(seg: Dictionary, size: int, font: Font) -> float:
+	if seg.has("glyph"):
+		return float(Glyphs.glyph_px(size)) + 2.0
+	return font.get_string_size(seg.text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+
+
+static func _segs_w(segs: Array, size: int, font: Font) -> float:
+	var w := 0.0
+	for seg in segs:
+		w += _seg_w(seg, size, font)
+	return w
+
+
+static func _text_glyphs(ci: CanvasItem, segs: Array, x: float, y: float, size: int, col: Color, align: int,
+		width: float, font: Font, shadow: bool) -> float:
+	var total := _segs_w(segs, size, font)
+	var cx := x
+	if width > 0.0:
+		if align == HORIZONTAL_ALIGNMENT_CENTER:
+			cx = x + (width - total) * 0.5
+		elif align == HORIZONTAL_ALIGNMENT_RIGHT:
+			cx = x + width - total
+	var base := y + font.get_ascent(size)
+	var gpx := Glyphs.glyph_px(size)
+	for seg in segs:
+		if seg.has("glyph"):
+			var tex: Texture2D = Glyphs.texture(seg.glyph, gpx)
+			if tex:
+				ci.draw_texture_rect(tex, Rect2(cx + 1.0, y + (font.get_height(size) - gpx) * 0.5, gpx, gpx), false)
+			cx += gpx + 2.0
+		else:
+			var t: String = seg.text
+			if shadow:
+				if high_contrast:
+					ci.draw_string_outline(font, Vector2(cx, base), t, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 4, Color(0, 0, 0, minf(1.0, col.a)))
+				else:
+					ci.draw_string(font, Vector2(cx + 1.0, base + 1.0), t, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(0, 0, 0, col.a * 0.8))
+			ci.draw_string(font, Vector2(cx, base), t, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+			cx += font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	return total
+
+
+## Word-wrapped paragraph with inline glyphs (left or centre aligned). Mirrors draw_multiline_string line breaking.
+static func _wrapped_glyphs(ci: CanvasItem, s: String, x: float, y: float, width: float, size: int, col: Color,
+		align: int, font: Font) -> void:
+	var lines: Array = []   # each: Array of segments
+	for para in s.split("\n"):
+		var cur: Array = []
+		var cur_w := 0.0
+		for seg in Glyphs.segments(para) if not Glyphs.segments(para).is_empty() else [{"text": para}]:
+			var items: Array = []
+			if seg.has("glyph"):
+				items.append(seg)
+			else:
+				var words: PackedStringArray = seg.text.split(" ", true)
+				for i in words.size():
+					var wtxt: String = words[i] + (" " if i < words.size() - 1 else "")
+					if wtxt != "":
+						items.append({"text": wtxt})
+			for it in items:
+				var iw := _seg_w(it, size, font)
+				if cur_w + iw > width and not cur.is_empty():
+					lines.append(cur)
+					cur = []
+					cur_w = 0.0
+				cur.append(it)
+				cur_w += iw
+		lines.append(cur)
+	var lh := font.get_height(size)
+	for i in lines.size():
+		var line: Array = lines[i]
+		# trim trailing spaces so centring is exact
+		if not line.is_empty() and line[-1].has("text"):
+			line[-1] = {"text": String(line[-1].text).rstrip(" ")}
+		var lw := _segs_w(line, size, font)
+		var lx := x
+		if align == HORIZONTAL_ALIGNMENT_CENTER:
+			lx = x + (width - lw) * 0.5
+		elif align == HORIZONTAL_ALIGNMENT_RIGHT:
+			lx = x + width - lw
+		_text_glyphs(ci, line, lx, y + i * lh, size, col, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font, true)

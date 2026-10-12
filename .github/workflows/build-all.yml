@@ -27,6 +27,11 @@ on:
         required: false
         type: number
         default: 3
+      run_tests:
+        description: Run the smoke + regression tests inside the build (false only when a preceding job already ran them on the same SHA)
+        required: false
+        type: boolean
+        default: true
     outputs:
       sha:
         description: The approved source SHA all artifacts were built from
@@ -101,6 +106,7 @@ jobs:
           cat build_info.json
 
       - name: Shared smoke test (same code every platform ships)
+        if: ${{ inputs.run_tests }}
         working-directory: godot
         run: |
           godot --headless --import || true
@@ -113,6 +119,7 @@ jobs:
           fi
 
       - name: Regression tests (defects found in playtesting must stay fixed)
+        if: ${{ inputs.run_tests }}
         working-directory: godot
         run: |
           set +e

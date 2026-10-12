@@ -528,6 +528,7 @@ func tick(dt: float) -> void:
 	if _capture_cooldown > 0.0:
 		_capture_cooldown -= dt
 	_poll_gamepad_device()
+	Glyphs.sync(active_mode() == "gamepad", Input.get_joy_name(_gp) if _gp >= 0 else "")
 	for k in _btn_flash.keys():
 		_btn_flash[k] -= dt
 		if _btn_flash[k] <= 0.0:

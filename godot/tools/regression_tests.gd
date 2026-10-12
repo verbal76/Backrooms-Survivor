@@ -20,6 +20,7 @@ func _init() -> void:
 	t_draw_order_and_day()
 	t_tutorial_matches_code()
 	t_controller_prompts_are_pure()
+	t_glyph_mapping()
 	await t_enemy_attack_cycle()
 	await t_no_flee_or_hover()
 	await t_tired_swing_still_hits()
@@ -280,3 +281,27 @@ func t_controller_prompts_are_pure() -> void:
 			if tt.contains(b):
 				bad.append("tip %s" % k)
 	_ok("no keyboard/mouse wording in gamepad prompts, tutorial pages or tips", bad.is_empty(), "; ".join(bad.slice(0, 6)))
+
+
+func t_glyph_mapping() -> void:
+	var prev_enabled: bool = Glyphs.enabled
+	var prev_family: String = Glyphs.family
+	var problems: Array[String] = []
+	var cases := {"Xbox Series Controller": "xbox", "PS5 Controller": "ps5", "DualShock 4": "ps4", "Nintendo Switch Pro Controller": "switch", "Steam Deck": "xbox", "": "xbox"}
+	for k in cases:
+		if Glyphs.family_for(k) != cases[k]:
+			problems.append("%s -> %s" % [k, Glyphs.family_for(k)])
+	Glyphs.enabled = true
+	Glyphs.family = "xbox"
+	var seg: Array = Glyphs.segments("Sprint with [A] now [Menu] pauses")
+	if seg.size() != 5 or not seg[1].has("glyph") or seg[3].get("text", "") != "Menu":
+		problems.append("segments: %s" % [seg])
+	Glyphs.enabled = false
+	if not Glyphs.segments("Sprint with [A]").is_empty():
+		problems.append("segments active while disabled")
+	for fam in ["xbox", "ps5", "ps4", "switch"]:
+		if not Glyphs.has_token("A", fam):
+			problems.append("%s lacks A glyph" % fam)
+	Glyphs.enabled = prev_enabled
+	Glyphs.family = prev_family
+	_ok("glyph family mapping, token segmentation and fallback", problems.is_empty(), "; ".join(problems))

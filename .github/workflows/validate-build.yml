@@ -1,12 +1,17 @@
 name: Validate build (non-publishing)
 
-# Exercises the REAL build and verification jobs (build-all.yml) for every platform from one pinned source SHA,
-# but NEVER publishes: no release, no tag, no OTA, no write permissions. Artifacts are kept only as short-lived
-# workflow artifacts. A failure on any required platform fails this workflow.
+# Never publishes: read-only permissions, no release, no tag, no OTA.
+#
+#  * `policy` + `tests` are CHEAP and run on every pull-request push: repository policy check, shared smoke test and
+#    regression tests (about 2-3 minutes, no platform exports).
+#  * `full` runs the REAL multiplatform build + verification (build-all.yml: Windows, Linux, Android, OTA patch from one
+#    pinned SHA, independently verified). It is EXPENSIVE, so it only runs when explicitly requested: add the
+#    `full-build` label to the pull request, or run this workflow manually (workflow_dispatch). Pushes alone never start it.
+#  * `result` is the single gate: quick checks must pass, and when `full` was requested it must pass too.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - "godot/**"
       - "tools/**"
@@ -21,7 +26,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  policy:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Repository policy check
+        run: python3 tools/policy_check.py
+
+  tests:
+    runs-on: ubuntu-22.04
+    container: barichello/godot-ci:4.3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Import project
+        working-directory: godot
+        run: godot --headless --import || true
+      - name: Shared smoke test
+        working-directory: godot
+        run: |
+          set +e
+          godot --headless -s tools/smoke_test.gd 2>&1 | tee /tmp/smoke.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" != "0" ] || grep -Eq "SCRIPT ERROR|Parse Error|SMOKE TEST FAILURE" /tmp/smoke.log || ! grep -q "SMOKE TEST PASSED" /tmp/smoke.log; then
+            echo "::error::shared smoke test failed"; exit 1
+          fi
+      - name: Regression tests
+        working-directory: godot
+        run: |
+          set +e
+          godot --headless -s tools/regression_tests.gd 2>&1 | tee /tmp/regression.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" != "0" ] || grep -Eq "SCRIPT ERROR|Parse Error|^FAIL " /tmp/regression.log || ! grep -Eq "REGRESSION TESTS: [0-9]+ passed, 0 failed" /tmp/regression.log; then
+            echo "::error::regression tests failed"; exit 1
+          fi
+
+  full:
+    # Expensive hosted multiplatform build. Requires the `full-build` label on the PR, or a manual run.
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-build') }}
+    needs: [policy, tests]
     uses: ./.github/workflows/build-all.yml
     with:
       sha: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -29,15 +77,21 @@ jobs:
       source_ref: ${{ github.event.pull_request.head.ref && format('refs/heads/{0}', github.event.pull_request.head.ref) || github.ref }}
       artifact_name: validation-release-files
       retention_days: 3
+      run_tests: false   # policy + tests above already ran on this exact SHA
 
   result:
-    # Single required-check style gate: succeeds only if every platform build and verification succeeded.
-    needs: validate
+    needs: [policy, tests, full]
     if: always()
     runs-on: ubuntu-22.04
     steps:
       - name: Overall validation result
         run: |
-          echo "validate job result: ${{ needs.validate.result }}"
-          [ "${{ needs.validate.result }}" = "success" ] || { echo "::error::build validation FAILED"; exit 1; }
-          echo "Validated source ${{ needs.validate.outputs.sha }} (no release published)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "policy=${{ needs.policy.result }} tests=${{ needs.tests.result }} full=${{ needs.full.result }}"
+          [ "${{ needs.policy.result }}" = "success" ] || { echo "::error::policy check failed"; exit 1; }
+          [ "${{ needs.tests.result }}" = "success" ] || { echo "::error::tests failed"; exit 1; }
+          case "${{ needs.full.result }}" in
+            success) echo "full multiplatform build verified" ;;
+            skipped) echo "full build not requested (add label full-build to run it)" ;;
+            *) echo "::error::full build FAILED"; exit 1 ;;
+          esac
+          echo "Validated (no release published)" | tee -a "$GITHUB_STEP_SUMMARY"
