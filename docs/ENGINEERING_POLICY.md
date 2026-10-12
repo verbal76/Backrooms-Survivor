@@ -16,7 +16,7 @@ Do not introduce a new engine, framework or build system to satisfy this policy.
 Core behavior (gameplay systems, physics, progression, procedural generation, AI, balance, content) is shared and
 identical on every platform. Allowed, isolated and documented differences: touch vs keyboard/mouse vs gamepad
 controls, OS integrations, rendering/quality settings required by hardware. Differences are listed in
-`docs/PLATFORMS.md`. A fix on one platform must be evaluated against all supported platforms. No platform may fall
+`docs/PLATFORM_SUPPORT.md`. A fix on one platform must be evaluated against all supported platforms. No platform may fall
 behind the authoritative line.
 
 ## 3. Branches are temporary workspaces
@@ -24,13 +24,13 @@ Feature, repair and agent/worktree branches may exist when justified, must origi
 line, have one clear purpose, and be integrated after validation. They must not become permanent independent histories
 or per-platform products. Release workflows must not build from abandoned or outdated branches. Parallel agents must
 not maintain separate implementations of the same application. Unmerged work must remain discoverable
-(`tools/branch_inventory.sh`, `docs/RECOVERY_LEDGER.md`). Platform names in branch names grant no permission to fork.
+(`tools/branch_inventory.sh`, `docs/BRANCH_LEDGER.md`). Platform names in branch names grant no permission to fork.
 
 ## 4. Abandoned-branch recovery audit
 Maintain a forensic inventory (commit ancestry, merge bases, patch equivalence, file and semantic comparison - not
 branch names or commit counts). Classify work as: already integrated; integrated through an equivalent implementation;
 missing and suitable for recovery; missing but requiring conflict resolution; superseded; intentionally removed;
-experimental/incomplete; unknown (owner review). Keep the ledger in `docs/RECOVERY_LEDGER.md` (branch, SHA, description,
+experimental/incomplete; unknown (owner review). Keep the ledger in `docs/BRANCH_LEDGER.md` (branch, SHA, description,
 classification, disposition). Do not auto-restore everything, do not delete branches because they look obsolete.
 
 ## 5. Recovering missing work
@@ -88,4 +88,4 @@ owner-approved releases: fast-forward from a validated `dev` SHA with owner appr
 allowed to lag. Verified facts: no branch protection and no rulesets exist, and no workflow requires `main` to match `dev`;
 the only coupling is the guard rule "the built SHA must contain `main`". Builds are validated on pull requests by
 `validate-build.yml` (non-publishing, same jobs as release) and published only by `dev-build.yml` after
-verification. Details and the verification record: `docs/RELEASE.md`.
+verification. Details and the verification record: `docs/RELEASES.md`.

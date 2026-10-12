@@ -3,7 +3,7 @@ name: Build all platforms (reusable)
 # Single build+verify pipeline used by BOTH the release workflow (dev-build.yml, publishes) and the non-publishing
 # validation workflow (validate-build.yml). One definition = no divergence between what is validated and what ships.
 # Every platform artifact is built from the SAME pinned source SHA; any failure fails the whole run (no skipped
-# platforms, no continue-on-error). See docs/ENGINEERING_POLICY.md and docs/RELEASE.md.
+# platforms, no continue-on-error). See docs/ENGINEERING_POLICY.md and docs/RELEASES.md.
 
 on:
   workflow_call:
@@ -27,6 +27,11 @@ on:
         required: false
         type: number
         default: 3
+      build_number:
+        description: Coordinated build number stamped into every platform (empty = this run's number, the legacy behaviour)
+        required: false
+        type: string
+        default: ""
       run_tests:
         description: Run the smoke + regression tests inside the build (false only when a preceding job already ran them on the same SHA)
         required: false
@@ -95,7 +100,7 @@ jobs:
       - name: Stamp build info
         working-directory: godot
         run: |
-          sed -i "s/\"build\": [0-9]*/\"build\": ${{ github.run_number }}/" build_info.json
+          sed -i "s/\"build\": [0-9]*/\"build\": ${{ inputs.build_number || github.run_number }}/" build_info.json
           sed -i "s/\"sha\": \"[^\"]*\"/\"sha\": \"${GITHUB_SHA::7}\"/" build_info.json
           sed -i "s/\"built_at\": \"[^\"]*\"/\"built_at\": \"$(date -u +%FT%TZ)\"/" build_info.json
           sed -i "s|\"manifest_url\": \"[^\"]*\"|\"manifest_url\": \"https://github.com/${{ github.repository }}/releases/download/dev/manifest.json\"|" build_info.json
@@ -170,7 +175,7 @@ jobs:
           SHA=$(sha256sum build/out/patch.pck | cut -d' ' -f1)
           MIN=$(tr -d '[:space:]' < min_base_build.txt)
           printf '{"build": %s, "sha": "%s", "pck": "patch.pck", "sha256": "%s", "size": %s, "min_base_build": %s}\n' \
-            "${{ github.run_number }}" "${GITHUB_SHA::7}" "$SHA" "$SIZE" "$MIN" > build/out/manifest.json
+            "${{ inputs.build_number || github.run_number }}" "${GITHUB_SHA::7}" "$SHA" "$SIZE" "$MIN" > build/out/manifest.json
           cat build/out/manifest.json
 
       # Required: a failure here fails the whole release (no silent platform skips).
@@ -204,7 +209,7 @@ jobs:
           export/android/debug_keystore_user = "androiddebugkey"
           export/android/debug_keystore_pass = "android"
           EOF
-          sed -i "s/^version\/code=.*/version\/code=${{ github.run_number }}/" export_presets.cfg
+          sed -i "s/^version\/code=.*/version\/code=${{ inputs.build_number || github.run_number }}/" export_presets.cfg
           mkdir -p build/android
           ls ~/.local/share/godot/export_templates/4.3.stable | grep -i android || echo "NO android templates"
           ls "$JH/bin" | tr '\n' ' '; echo
@@ -225,7 +230,7 @@ jobs:
               "$1" "$2" "$3" "$SRC" "$(sha256sum "$F" | cut -d' ' -f1)" "$(stat -c%s "$F")"
           }
           {
-            printf '{"schema": 1,\n "app_version": "0.1.0",\n "build": %s,\n "built_at": "%s",\n' "${{ github.run_number }}" "$(date -u +%FT%TZ)"
+            printf '{"schema": 1,\n "app_version": "0.1.0",\n "build": %s,\n "built_at": "%s",\n' "${{ inputs.build_number || github.run_number }}" "$(date -u +%FT%TZ)"
             printf ' "engine": "%s",\n "toolchain": {"godot_ci_image": "barichello/godot-ci:4.3", "java": "%s", "android_build_tools": "34.0.0", "android_platform": "android-34"},\n' \
               "$(godot --version | head -1)" "$(java -version 2>&1 | grep -m1 -i 'version' | tr -d '"\\')"
             printf ' "source": {"repo": "%s", "sha": "%s", "ref": "%s", "workflow_run": "%s"},\n' "${{ github.repository }}" "$SRC" "${{ inputs.source_ref }}" "${{ github.run_id }}"

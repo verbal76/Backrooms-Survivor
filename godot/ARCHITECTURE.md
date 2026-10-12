@@ -79,7 +79,7 @@ Items, orbs, props, chest rooms, portal, bombs' pickups. `spawn_drop(tile_pos, k
 ### Lighting (`game.lighting`)
 `light_level_at_player() -> float` (0..1, used for sanity), headlamp + battery, `CanvasModulate`, post-FX.
 
-## Platform, Steam Deck and quality (see docs/STEAMDECK.md)
+## Platform, Steam Deck and quality (see docs/STEAM_HARDWARE_CHECKLIST.md)
 - `scripts/platform/platform.gd` (`const Platform = preload(...)`, no class_name so OTA patches keep working): `is_steam_deck()`,
   `is_steamos()`, `is_proton()`, `is_big_picture()`, `is_deck_like()` from env vars (`SteamDeck`, `SteamOS`, `SteamGameId`,
   `SteamTenfoot`, `STEAM_COMPAT_*`) and /etc/os-release. `GameOptions.apply_platform_defaults()` uses it (fullscreen, Medium quality,

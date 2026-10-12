@@ -1,0 +1,114 @@
+name: Coordinated release build (manual)
+
+# MANUAL, owner-initiated. Builds Windows + Linux + Android from ONE pinned source SHA with ONE build number,
+# verifies every artifact, packages them with studio naming + SHA256SUMS + manifest, and (only when
+# destination = github-release) creates the immutable release tag `build-NN`.
+# It NEVER touches the OTA channel (the rolling `dev` release / manifest.json); OTA is dev-build.yml's separate concern.
+# Nothing here runs automatically. See docs/RELEASES.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-char commit SHA to release (must be the current tip of dev)
+        required: true
+        type: string
+      build_number:
+        description: Coordinated build number NN (integer, greater than every existing build-NN tag and than the last OTA build)
+        required: true
+        type: string
+      destination:
+        description: artifacts-only (workflow artifacts, nothing published) or github-release (creates tag build-NN)
+        required: true
+        type: choice
+        options: [artifacts-only, github-release]
+        default: artifacts-only
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate inputs
+        env:
+          SRC: ${{ inputs.source_sha }}
+          NUM: ${{ inputs.build_number }}
+        run: |
+          [[ "$SRC" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full 40-char lowercase SHA"; exit 1; }
+          [[ "$NUM" =~ ^[1-9][0-9]{0,3}$ ]] || { echo "::error::build_number must be a positive integer"; exit 1; }
+          git cat-file -e "$SRC^{commit}" || { echo "::error::$SRC is not a commit of this repository"; exit 1; }
+          [ "$SRC" = "$(git rev-parse origin/dev)" ] || { echo "::error::source_sha is not the tip of dev"; exit 1; }
+          NN=$(printf '%02d' "$NUM")
+          if git ls-remote --exit-code --tags origin "refs/tags/build-$NN" >/dev/null 2>&1; then
+            echo "::error::tag build-$NN already exists (builds are immutable; pick the next number)"; exit 1
+          fi
+          # monotonic: greater than any existing build-NN tag
+          MAX=$(git ls-remote --tags origin 'refs/tags/build-*' | sed 's#.*refs/tags/build-##' | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
+          if [ -n "${MAX:-}" ] && [ "$((10#$NUM))" -le "$((10#$MAX))" ]; then
+            echo "::error::build_number $NUM must be greater than the latest build-$MAX"; exit 1
+          fi
+
+  build:
+    needs: preflight
+    uses: ./.github/workflows/build-all.yml
+    with:
+      sha: ${{ inputs.source_sha }}
+      mode: release
+      source_ref: refs/heads/dev
+      artifact_name: coordinated-build-files
+      build_number: ${{ inputs.build_number }}
+      retention_days: 14
+
+  package:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: coordinated-build-files
+          path: out
+      - name: Package with studio naming, checksums and manifest
+        run: |
+          [ "${{ needs.build.outputs.sha }}" = "${{ inputs.source_sha }}" ] || { echo "::error::verified SHA differs from requested"; exit 1; }
+          python3 tools/package_release.py --in out --out release --build "${{ inputs.build_number }}"
+          ls -la release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coordinated-release-assets
+          path: release/*
+          retention-days: 14
+
+  publish:
+    # Only when the owner chose destination = github-release. Creates build-NN; never edits or replaces an existing release.
+    if: ${{ inputs.destination == 'github-release' }}
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coordinated-release-assets
+          path: release
+      - name: Create immutable release build-NN
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NN=$(printf '%02d' "${{ inputs.build_number }}")
+          gh release view "build-$NN" --repo "${{ github.repository }}" >/dev/null 2>&1 && { echo "::error::build-$NN already exists"; exit 1; }
+          gh release create "build-$NN" release/* --repo "${{ github.repository }}" \
+            --target "${{ inputs.source_sha }}" \
+            --title "Backrooms Survivor Build $NN" \
+            --notes "Coordinated build $NN from source ${{ inputs.source_sha }}: Android APK, Windows EXE zip and Linux tar.gz built from the same commit. Verify with the SHA256SUMS and Manifest files. OTA is a separate channel and is not affected by this release."

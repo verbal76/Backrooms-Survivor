@@ -22,8 +22,8 @@ if "SINGLE-SOURCE-OF-TRUTH POLICY" not in claude:
     errs.append("CLAUDE.md must contain the 'SINGLE-SOURCE-OF-TRUTH POLICY' section")
 if "docs/ENGINEERING_POLICY.md" not in claude:
     errs.append("CLAUDE.md must link docs/ENGINEERING_POLICY.md")
-for f in ("docs/ENGINEERING_POLICY.md", "docs/PLATFORMS.md", "docs/RECOVERY_LEDGER.md", "tools/verify_release.py",
-          "tools/branch_inventory.sh", "tools/verify_artifacts.py", "docs/RELEASE.md", "godot/tools/smoke_test.gd", "godot/tools/regression_tests.gd"):
+for f in ("docs/ENGINEERING_POLICY.md", "docs/PLATFORM_SUPPORT.md", "docs/BRANCH_LEDGER.md", "tools/verify_release.py",
+          "tools/branch_inventory.sh", "tools/verify_artifacts.py", "docs/RELEASES.md", "godot/tools/smoke_test.gd", "godot/tools/regression_tests.gd"):
     read(f)
 
 wfdir = os.path.join(root, ".github", "workflows")
@@ -33,6 +33,7 @@ for fn in sorted(os.listdir(wfdir)) if os.path.isdir(wfdir) else []:
 build_all = read(".github/workflows/build-all.yml")
 dev_build = read(".github/workflows/dev-build.yml")
 validate = read(".github/workflows/validate-build.yml")
+release_build = read(".github/workflows/release-build.yml")
 if re.search(r"continue-on-error:\s*true", wf_all):
     errs.append("workflows must not use continue-on-error: true (no silent platform skips)")
 for needle in ("guard:", "needs.guard.outputs.sha", "tools/verify_release.py", "tools/verify_artifacts.py",
@@ -46,6 +47,12 @@ if "uses: ./.github/workflows/build-all.yml" not in dev_build:
     errs.append("dev-build.yml must call the shared build-all.yml (one pipeline for release and validation)")
 if "uses: ./.github/workflows/build-all.yml" not in validate:
     errs.append("validate-build.yml must call the shared build-all.yml")
+if "uses: ./.github/workflows/build-all.yml" not in release_build or "workflow_dispatch" not in release_build:
+    errs.append("release-build.yml must be a manual workflow_dispatch that calls the shared build-all.yml")
+if re.search(r"^\s*(push|pull_request|schedule):", release_build, re.M):
+    errs.append("release-build.yml must stay manual-only (no push/pull_request/schedule trigger)")
+if "releases/download/dev" in release_build or "gh release delete dev" in release_build:
+    errs.append("release-build.yml must never touch the OTA `dev` release")
 if re.search(r"gh release|contents:\s*write|--prerelease", validate):
     errs.append("validate-build.yml must never publish (no gh release / contents: write)")
 if "needs.build" not in dev_build or "needs: build" not in dev_build:

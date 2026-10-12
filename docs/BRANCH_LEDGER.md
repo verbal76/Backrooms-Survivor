@@ -8,7 +8,7 @@ file/semantic review of superseded or intentionally changed behavior. Regenerate
 **Authoritative line: `dev`** @ `222225a25d7b557b52b622783a699e00e2ac0883` (identical to
 `claude/fervent-franklin-hrrnb7` and PR #4's head; the rolling release `dev` and tag `dev` point to the same SHA).
 `main` (`33c8e64`, protected production) is an ancestor of it and 41 commits behind; bringing `main` up to date needs the
-owner's approval, but nothing requires it (see `docs/RELEASE.md`).
+owner's approval, but nothing requires it (see `docs/RELEASES.md`).
 
 ## Branches, tags, releases
 
@@ -70,5 +70,13 @@ tracked changes (one untracked `crow_sheet.png.import` was already committed on 
   settings file). Not recovered: unrelated to the Godot product, machine-specific, and the settings file should not be
   versioned. Verified that no Godot functionality or installer behavior is lost (the LÖVE packaging files `_installer.iss` and `BUILD_ALL_AND_EXECUTABLE.bat` are already on `dev`). PR #1 was closed; its branch is preserved. No branch has been deleted.
 - **L-2:** PR #2 (draft) is superseded by #3/#4; owner may close it.
-- **L-3:** `main` lags `dev` by design (see `docs/RELEASE.md`): no protection or workflow requires it to match; it is fast-forwarded to a released `dev` SHA only with owner approval.
+- **L-3:** `main` lags `dev` by design (see `docs/RELEASES.md`): no protection or workflow requires it to match; it is fast-forwarded to a released `dev` SHA only with owner approval.
 - **L-4:** 12 local `worktree-agent-*` branches exist only locally. All their work is on `dev`; delete them only with approval.
+
+## Owner decisions pending (RED - not executed by agents)
+- R-1: fast-forward `main` to a validated `dev` SHA (stale unguarded workflow on `main`).
+- R-2: stop `dev-build.yml` auto-publishing the OTA channel on push to `dev` (master standard: OTA publication manual).
+- R-3: OTA authenticity signature + known-good retention/rollback (boot code => native build + `min_base_build.txt` bump).
+- R-4: release signing (currently debug-signed), Steamworks / GodotSteam / Steam Cloud / Steam text input.
+- R-5: first hosted run of `release-build.yml`; licence confirmation for Blackcraft.ttf and audio (docs/THIRD_PARTY_ASSETS.md).
+- R-6: physical-device testing (phone, Windows, Linux, Steam Deck).

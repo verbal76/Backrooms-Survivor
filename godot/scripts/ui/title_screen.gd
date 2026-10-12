@@ -42,6 +42,22 @@ func _change_difficulty(d: int) -> void:
 	ui.difficulty = clampi(ui.difficulty + d, 1, 4)
 
 
+const Patcher = preload("res://scripts/patcher.gd")
+var _ver_line := ""
+
+
+## Version diagnostics for bug reports: app version, build number, short source SHA, platform.
+func _version_line() -> String:
+	if _ver_line == "":
+		var info: Dictionary = Patcher.read_info()
+		var sha: String = str(info.get("sha", "local"))
+		var plat := OS.get_name()
+		if OS.has_feature("steam_deck") or OS.get_environment("SteamDeck") == "1":
+			plat += " (Steam Deck)"
+		_ver_line = "v%s  build %s  %s  %s  %s" % [info.get("app_version", "?"), info.get("build", 0), sha.substr(0, 7), plat, "debug" if OS.has_feature("debug") else "release"]
+	return _ver_line
+
+
 func _aim_text() -> String:
 	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
 
@@ -154,6 +170,7 @@ func _draw() -> void:
 
 	var hint: String = ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ENTER confirm",
 		"D-Pad select    Left/Right adjust    A confirm    Menu start", "TAP to select    DRAG sliders")
-	UITheme.text(self, hint, 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, hint, 0, h - 40, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, _version_line(), 0, h - 20, 10, Color(0.4, 0.4, 0.34, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.12), 3.0)
 	UITheme.vignette(self, size, 0.55)

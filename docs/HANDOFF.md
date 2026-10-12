@@ -18,7 +18,7 @@ Read `/CLAUDE.md` first (permanent policy), then this file. Repo: **verbal76/Bac
 **Stage: C - release qualification / awaiting owner and physical-device testing.** The Godot port is feature-complete
 against the Lua game plus owner-requested additions; builds are verified; no owner-authorized production release yet.
 
-- **Authoritative line: `dev`** (see `docs/RELEASE.md`). `dev` = `222225a` (dev build 12 is the published rolling prerelease).
+- **Authoritative line: `dev`** (see `docs/RELEASES.md`). `dev` = `222225a` (dev build 12 is the published rolling prerelease).
   Working branch `claude/fervent-franklin-hrrnb7` (PR #4) is ahead of `dev` with policy/CI/test work; head at the time of
   writing is listed under "Source" below. `main` (`33c8e64`) intentionally lags; PR #1 closed (branch kept), PR #2 superseded.
 - **Game (`godot/`):** ported player, map, combat (8 weapons, bombs), 6 enemy types incl. crows, items/orbs/props/chests/portal,
@@ -26,7 +26,7 @@ against the Lua game plus owner-requested additions; builds are verified; no own
   controls with auto-detect, Android touch controls, audio (OGG, synth SFX), lighting/FX/juice, Steam Deck/Linux support, studio splash
   and icon (Hot Attic Games). Balance retuned (`godot/docs/BALANCE.md`).
 - **Platforms:** Android APK, Windows zip, Linux tar.gz (Steam Deck native), all from one source/SHA via `.github/workflows/build-all.yml`.
-- **Policy/CI:** single-source-of-truth policy (`docs/ENGINEERING_POLICY.md`), ledger (`docs/RECOVERY_LEDGER.md`), `validate-build.yml`
+- **Policy/CI:** single-source-of-truth policy (`docs/ENGINEERING_POLICY.md`), ledger (`docs/BRANCH_LEDGER.md`), `validate-build.yml`
   (non-publishing, runs on PRs), `dev-build.yml` (publishes - **a push to `dev` publishes**, needs owner approval), smoke + regression tests.
 - **Tests:** `tools/policy_check.py`, `godot/tools/smoke_test.gd`, `godot/tools/regression_tests.gd` (17 checks), balance sim
   (`godot/tools/balance_sim.gd`). CI validation of the full build+verify pipeline passed on `f096650` and `f9e2dec`; a deliberate
@@ -64,7 +64,7 @@ Status of the files: the restricted/unlicensed uploads were deleted from the ses
 1. Authorize a release: push/merge validated work to `dev` (publishes the rolling prerelease) and optionally fast-forward `main`.
 2. License of the sound pack; license/author of scarymobs; final art direction (Blender sprites vs pixel packs).
 3. Delete stale branches (12 local `worktree-agent-*`, PR #2/#1 branches) only when you say so.
-4. Steam: Steamworks app id, SteamPipe, release export presets, GodotSteam (see `godot/docs/STEAMDECK.md`).
+4. Steam: Steamworks app id, SteamPipe, release export presets, GodotSteam (see `docs/STEAM_HARDWARE_CHECKLIST.md`).
 
 ## Next actions (highest value first)
 1. Owner playtest of the latest build on phone + PC (+ Deck if available); triage feedback into fixes.

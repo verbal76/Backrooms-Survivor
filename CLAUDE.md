@@ -4,8 +4,8 @@ One game, one codebase. The LÖVE2D Lua files in the repo root are the **legacy 
 game (kept until the owner signs off full parity; never built or shipped). The product is the Godot 4.3 project in
 `godot/` which builds Android, Windows and Linux/Steam Deck from the same source.
 
-Read before working: `godot/ARCHITECTURE.md` (system contract), `docs/PLATFORMS.md` (platform differences),
-`docs/RECOVERY_LEDGER.md` (branch accounting), `godot/docs/BALANCE.md`, `godot/docs/STEAMDECK.md`.
+Read before working: `godot/ARCHITECTURE.md` (system contract), `docs/PLATFORM_SUPPORT.md` (platform differences),
+`docs/BRANCH_LEDGER.md` (branch accounting), `godot/docs/BALANCE.md`, `docs/STEAM_HARDWARE_CHECKLIST.md`.
 
 ## SINGLE-SOURCE-OF-TRUTH POLICY (mandatory; full text: docs/ENGINEERING_POLICY.md)
 
@@ -14,16 +14,16 @@ Every abandoned branch must be accounted for before valuable work is discarded.
 
 1. **One codebase, many targets.** Android, Windows, Linux/Steam Deck are build targets of the same `godot/` source -
    never separate versions. Platform differences are isolated (input schemes in `systems/input.gd`, `scripts/platform/*`,
-   per-target export presets) and documented in `docs/PLATFORMS.md`. A fix for one platform is evaluated for all of them.
+   per-target export presets) and documented in `docs/PLATFORM_SUPPORT.md`. A fix for one platform is evaluated for all of them.
    Do not change gameplay, balance, physics or content per platform.
 2. **Authoritative line = `dev`** (the integration/release branch; it must always contain `main`). `main` is only the record of
    owner-approved releases (fast-forward from a validated `dev` SHA, owner approval required) - never a second source of truth.
-   See `docs/RELEASE.md`. Feature/agent/repair branches are temporary workspaces: they
+   See `docs/RELEASES.md` (manual coordinated release: `release-build.yml`; OTA stays separate). Feature/agent/repair branches are temporary workspaces: they
    start from the current `dev`, have one purpose, and are merged back into `dev` after validation. Never maintain a
    branch (or branch name) per platform, never fork the app per agent, never leave finished work unmerged.
 3. **Agents/worktrees:** branch from current `dev` (`git merge`/branch from it first), keep changes scoped, report the
    branch + SHA, and make sure the integrator merges it. Do not delete branches; run `tools/branch_inventory.sh` to see
-   unmerged work and record disposition in `docs/RECOVERY_LEDGER.md`.
+   unmerged work and record disposition in `docs/BRANCH_LEDGER.md`.
 4. **Releases:** all artifacts of one release come from the SAME full source SHA, pinned by the `guard` job of
    `.github/workflows/dev-build.yml`, recorded in `release_manifest.json`, and checked by `tools/verify_release.py`.
    No platform step may be skipped silently (no `continue-on-error`). If a platform fails, the release fails.

@@ -20,6 +20,7 @@ authorizes a release they may fast-forward `main` to the released `dev` SHA; unt
   checked). Any failure fails the run. No `continue-on-error`.
 - `validate-build.yml`: runs `build-all.yml` in `validate` mode on pull requests (and manual dispatch). Read-only
   permissions, never publishes. This is how changes are proven before they reach `dev`.
+- `release-build.yml` (manual only): the coordinated release (see "Coordinated releases" below).
 - `dev-build.yml`: on push to `dev`, runs `build-all.yml` in `release` mode (SHA must equal the tip of `dev`) and, only
   if verification succeeded, replaces the rolling `dev` prerelease. **Pushing to `dev` publishes**, so it requires owner
   authorization.
@@ -46,3 +47,19 @@ presets, engine version or Android permissions need a new native build: bump `go
 - Negative test, run `38195761637` (head `37c2f70`, Linux preset deliberately broken, since reverted): `Export Linux` failed, the
   patch/Android/manifest/upload steps were skipped, no artifact was uploaded, `verify` was skipped and `result` failed.
   A failure on any required platform therefore fails the whole validation; nothing can publish.
+
+## Coordinated releases (`release-build.yml`, manual, never automatic)
+Inputs: `source_sha` (full SHA, must be the tip of `dev`), `build_number` (integer; must be greater than every existing
+`build-NN` tag, tag must not exist), `destination` (`artifacts-only` | `github-release`).
+Flow: preflight validation -> `build-all.yml` (one SHA, ONE build number stamped into every platform's build info,
+Android versionCode and OTA manifest; verified) -> `package_release.py` -> optional publish.
+Assets of build NN: `Backrooms Survivor Build NN APK.apk`, `... EXE.zip`, `... Linux.tar.gz`, `... SHA256SUMS.txt`,
+`... Manifest.json`. Publishing creates the immutable tag/release `build-NN`; it never edits or replaces an existing
+release and never touches the OTA channel. The platform is always `all` (a release with a skipped platform is not allowed).
+Status: added, **never run**; the first hosted run needs owner approval. Release signing is still debug-signed (owner decision pending).
+
+## Known divergence from the studio master standard (owner decision pending)
+`dev-build.yml` still publishes the rolling OTA `dev` prerelease automatically on every push to `dev`. The master standard
+says OTA publication must be a separate, manual act. Changing it alters the production OTA pipeline, so it is recorded
+as a RED item in `docs/BRANCH_LEDGER.md` and left unchanged until the owner authorizes it. Release != OTA publication holds
+for `release-build.yml` already.
