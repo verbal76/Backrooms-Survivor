@@ -43,7 +43,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out_dir")
     ap.add_argument("--sha", required=True)
+    ap.add_argument("--platforms", default="all", help="all|android|windows|linux: which platform artifacts must be present and verified")
     a = ap.parse_args()
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import platforms as _pl
+    want = _pl.selected(a.platforms)
     errs, ok = [], []
     man = json.load(open(os.path.join(a.out_dir, "release_manifest.json")))
     build = man.get("build")
@@ -64,8 +68,10 @@ def main():
             extra()
 
     # ---- windows: zip with exe + pck
-    p = files.get("windows")
-    if p:
+    p = files.get("windows") if "windows" in want else None
+    if "windows" not in want:
+        pass
+    elif p:
         try:
             z = zipfile.ZipFile(p)
             names = z.namelist()
@@ -82,8 +88,10 @@ def main():
         errs.append("windows artifact missing")
 
     # ---- linux: tar.gz with an executable ELF x86-64 (pck embedded)
-    p = files.get("linux")
-    if p:
+    p = files.get("linux") if "linux" in want else None
+    if "linux" not in want:
+        pass
+    elif p:
         try:
             t = tarfile.open(p, "r:gz")
             mem = [m for m in t.getmembers() if m.isfile() and m.name.endswith(".x86_64")]
@@ -103,8 +111,10 @@ def main():
         errs.append("linux artifact missing")
 
     # ---- android: signed apk with arm64 native lib + embedded game data
-    p = files.get("android")
-    if p:
+    p = files.get("android") if "android" in want else None
+    if "android" not in want:
+        pass
+    elif p:
         try:
             z = zipfile.ZipFile(p)
             names = z.namelist()

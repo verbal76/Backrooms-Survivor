@@ -49,14 +49,27 @@ presets, engine version or Android permissions need a new native build: bump `go
   A failure on any required platform therefore fails the whole validation; nothing can publish.
 
 ## Coordinated releases (`release-build.yml`, manual, never automatic)
-Inputs: `source_sha` (full SHA, must be the tip of `dev`), `build_number` (integer; must be greater than every existing
-`build-NN` tag, tag must not exist), `destination` (`artifacts-only` | `github-release`).
-Flow: preflight validation -> `build-all.yml` (one SHA, ONE build number stamped into every platform's build info,
-Android versionCode and OTA manifest; verified) -> `package_release.py` -> optional publish.
-Assets of build NN: `Backrooms Survivor Build NN APK.apk`, `... EXE.zip`, `... Linux.tar.gz`, `... SHA256SUMS.txt`,
-`... Manifest.json`. Publishing creates the immutable tag/release `build-NN`; it never edits or replaces an existing
-release and never touches the OTA channel. The platform is always `all` (a release with a skipped platform is not allowed).
-Status: added, **never run**; the first hosted run needs owner approval. Release signing is still debug-signed (owner decision pending).
+Inputs: `platform` (`all` | `android` | `windows` | `linux`), `source_sha` (full SHA, must be the tip of `dev`),
+`build_number` (integer), `destination` (`local_only` | `github_releases`, default `local_only`).
+Preflight refuses: a malformed SHA or a SHA that is not the tip of `dev`; a build number that is not greater than every
+existing `build-NN` tag **and** than the build the OTA channel serves; an existing `build-NN` tag; `github_releases`
+with anything but `platform=all` (a coordinated release never ships a missing platform).
+Flow: preflight -> `build-all.yml` (one SHA, ONE build number stamped into build info, Android versionCode and the OTA
+manifest; verified for exactly the requested platforms) -> `package_release.py` -> optional publish.
+Assets of build NN: `Backrooms Survivor Build NN APK.apk`, `... EXE.zip`, `... Linux.tar.gz`, `checksums.sha256`
+(`sha256sum -c` compatible), `build-manifest.json`. Publishing creates the immutable tag/release `build-NN`; it never
+edits or replaces an existing release and never touches the OTA channel.
+Status: added, local logic tested, **never run on GitHub**; the first hosted run needs owner approval.
+Release signing is still debug-signed (R-4).
+
+## Build-number ledger (verified 2026-10-12 via the GitHub API)
+| Build | Kind | Source | Notes |
+|---|---|---|---|
+| 12 | rolling OTA prerelease `dev` ("Dev build 12") | `222225a` | the only release/tag in the repository; no `build-NN` tag exists |
+Rule: a coordinated build number must exceed 12 (and every later OTA build). **Caveat:** an installed build N ignores OTA
+patches numbered <= N (`patcher.gd`), and the OTA channel is numbered by workflow run number. Coordinated numbers
+therefore must be chosen above the OTA channel's current number, and the owner must decide (R-2) whether OTA and
+coordinated releases share one sequence before the first coordinated release is published.
 
 ## Known divergence from the studio master standard (owner decision pending)
 `dev-build.yml` still publishes the rolling OTA `dev` prerelease automatically on every push to `dev`. The master standard

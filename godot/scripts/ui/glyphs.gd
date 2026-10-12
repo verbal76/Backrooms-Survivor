@@ -31,9 +31,9 @@ static func _load_index() -> void:
 
 
 ## Called every frame by GameInput: pad_active = active scheme is gamepad, joy_name = the active pad's name.
-static func sync(pad_active: bool, joy_name: String) -> void:
+static func sync(pad_active: bool, joy_name: String, override_family := "") -> void:
 	enabled = pad_active
-	family = family_for(joy_name)
+	family = override_family if override_family != "" else family_for(joy_name)
 
 
 static func family_for(joy_name: String) -> String:

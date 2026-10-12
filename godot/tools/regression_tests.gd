@@ -302,6 +302,19 @@ func t_glyph_mapping() -> void:
 	for fam in ["xbox", "ps5", "ps4", "switch"]:
 		if not Glyphs.has_token("A", fam):
 			problems.append("%s lacks A glyph" % fam)
+	# manual prompt style: old saves without the key load as Auto; the choice survives a round trip and forces the family
+	var go := GameOptions.new()
+	go.apply_dict({"music_volume": 0.5})
+	if go.prompt_style != 0:
+		problems.append("old options.json must default prompt_style to Auto")
+	go.prompt_style = 2
+	var go2 := GameOptions.new()
+	go2.apply_dict(go.to_dict())
+	if go2.prompt_style != 2:
+		problems.append("prompt_style lost in round trip")
+	Glyphs.sync(true, "Xbox Controller", GameOptions.PROMPT_FAMILIES[2])
+	if Glyphs.family != "ps5":
+		problems.append("PlayStation override ignored")
 	Glyphs.enabled = prev_enabled
 	Glyphs.family = prev_family
 	_ok("glyph family mapping, token segmentation and fallback", problems.is_empty(), "; ".join(problems))

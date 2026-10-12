@@ -6,6 +6,8 @@ extends RefCounted
 
 const PATH := "user://options.json"
 const CONTROL_MODES := ["auto", "keyboard", "gamepad", "touch"]
+const PROMPT_STYLES := ["Auto", "Xbox", "PlayStation", "Switch"]
+const PROMPT_FAMILIES := ["", "xbox", "ps5", "switch"]   # glyph family per style ("" = follow the connected pad)
 const RESOLUTIONS := [Vector2i(640, 480), Vector2i(800, 600), Vector2i(960, 720), Vector2i(1280, 720),
 	Vector2i(1280, 960), Vector2i(1920, 1080), Vector2i(1280, 800), Vector2i(1920, 1200)]
 
@@ -21,6 +23,7 @@ var sfx_volume := 0.75
 var brightness := 1.0              # title/pause "Brightness" slider
 var headlamp_brightness := 1.0
 var control_mode := 0              # index in CONTROL_MODES
+var prompt_style := 0              # index in PROMPT_STYLES (controller button art); additive, absent in old saves = Auto
 var res_index := 2
 var fullscreen := false
 var aim_assist := true
@@ -108,7 +111,7 @@ func to_dict() -> Dictionary:
 		"haptics": haptics, "tips_enabled": tips_enabled, "ui_scale": ui_scale, "high_contrast": high_contrast,
 		"vsync": vsync, "fps_cap_index": fps_cap_index, "quality": quality, "pause_on_focus_loss": pause_on_focus_loss,
 		"rumble": rumble, "rumble_strength": rumble_strength, "pad_deadzone": pad_deadzone,
-		"steam_keyboard": steam_keyboard}
+		"steam_keyboard": steam_keyboard, "prompt_style": prompt_style}
 
 
 func save() -> void:
@@ -124,7 +127,11 @@ func load_from_disk() -> void:
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PATH))
 	if not (parsed is Dictionary):
 		return
-	var d: Dictionary = parsed
+	apply_dict(parsed)
+
+
+## Applies saved option values (missing keys keep their defaults, so old saves keep loading).
+func apply_dict(d: Dictionary) -> void:
 	music_volume = clampf(float(d.get("music_volume", music_volume)), 0.0, 1.0)
 	sfx_volume = clampf(float(d.get("sfx_volume", sfx_volume)), 0.0, 1.0)
 	brightness = clampf(float(d.get("brightness", brightness)), 0.0, 1.0)
@@ -138,6 +145,7 @@ func load_from_disk() -> void:
 	touch_size = clampf(float(d.get("touch_size", touch_size)), 0.6, 1.5)
 	touch_opacity = clampf(float(d.get("touch_opacity", touch_opacity)), 0.2, 1.0)
 	touch_left_handed = bool(d.get("touch_left_handed", touch_left_handed))
+	prompt_style = clampi(int(d.get("prompt_style", prompt_style)), 0, PROMPT_STYLES.size() - 1)
 	haptics = bool(d.get("haptics", haptics))
 	tips_enabled = bool(d.get("tips_enabled", tips_enabled))
 	ui_scale = clampf(float(d.get("ui_scale", ui_scale)), 0.8, 1.5)

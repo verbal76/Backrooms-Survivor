@@ -1,14 +1,20 @@
 name: Coordinated release build (manual)
 
 # MANUAL, owner-initiated. Builds Windows + Linux + Android from ONE pinned source SHA with ONE build number,
-# verifies every artifact, packages them with studio naming + SHA256SUMS + manifest, and (only when
-# destination = github-release) creates the immutable release tag `build-NN`.
+# verifies every artifact, packages them with studio naming + checksums.sha256 + build-manifest.json, and (only when
+# destination = github_releases) creates the immutable release tag `build-NN`.
 # It NEVER touches the OTA channel (the rolling `dev` release / manifest.json); OTA is dev-build.yml's separate concern.
 # Nothing here runs automatically. See docs/RELEASES.md.
 
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: android, windows, linux or all. A github_releases destination requires all (a coordinated release never ships a missing platform).
+        required: true
+        type: choice
+        options: [all, android, windows, linux]
+        default: all
       source_sha:
         description: Full 40-char commit SHA to release (must be the current tip of dev)
         required: true
@@ -18,11 +24,11 @@ on:
         required: true
         type: string
       destination:
-        description: artifacts-only (workflow artifacts, nothing published) or github-release (creates tag build-NN)
+        description: local_only (workflow artifacts only, nothing published) or github_releases (creates the immutable release build-NN)
         required: true
         type: choice
-        options: [artifacts-only, github-release]
-        default: artifacts-only
+        options: [local_only, github_releases]
+        default: local_only
 
 permissions:
   contents: read
@@ -42,7 +48,13 @@ jobs:
         env:
           SRC: ${{ inputs.source_sha }}
           NUM: ${{ inputs.build_number }}
+          PLAT: ${{ inputs.platform }}
+          DEST: ${{ inputs.destination }}
         run: |
+          python3 tools/platforms.py check "$PLAT"
+          if [ "$DEST" = github_releases ] && [ "$PLAT" != all ]; then
+            echo "::error::a GitHub release must contain all three platforms (platform=all)"; exit 1
+          fi
           [[ "$SRC" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full 40-char lowercase SHA"; exit 1; }
           [[ "$NUM" =~ ^[1-9][0-9]{0,3}$ ]] || { echo "::error::build_number must be a positive integer"; exit 1; }
           git cat-file -e "$SRC^{commit}" || { echo "::error::$SRC is not a commit of this repository"; exit 1; }
@@ -50,6 +62,11 @@ jobs:
           NN=$(printf '%02d' "$NUM")
           if git ls-remote --exit-code --tags origin "refs/tags/build-$NN" >/dev/null 2>&1; then
             echo "::error::tag build-$NN already exists (builds are immutable; pick the next number)"; exit 1
+          fi
+          # must also exceed the build the OTA channel currently serves (ledger: docs/RELEASES.md), read-only fetch
+          OTA=$(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/dev/manifest.json" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("build", 0)))' || echo 0)
+          if [ "$((10#$NUM))" -le "$OTA" ]; then
+            echo "::error::build_number $NUM must be greater than the OTA channel build ($OTA)"; exit 1
           fi
           # monotonic: greater than any existing build-NN tag
           MAX=$(git ls-remote --tags origin 'refs/tags/build-*' | sed 's#.*refs/tags/build-##' | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
@@ -66,6 +83,7 @@ jobs:
       source_ref: refs/heads/dev
       artifact_name: coordinated-build-files
       build_number: ${{ inputs.build_number }}
+      platform: ${{ inputs.platform }}
       retention_days: 14
 
   package:
@@ -82,7 +100,7 @@ jobs:
       - name: Package with studio naming, checksums and manifest
         run: |
           [ "${{ needs.build.outputs.sha }}" = "${{ inputs.source_sha }}" ] || { echo "::error::verified SHA differs from requested"; exit 1; }
-          python3 tools/package_release.py --in out --out release --build "${{ inputs.build_number }}"
+          python3 tools/package_release.py --in out --out release --build "${{ inputs.build_number }}" --platform "${{ inputs.platform }}"
           ls -la release
       - uses: actions/upload-artifact@v4
         with:
@@ -91,8 +109,8 @@ jobs:
           retention-days: 14
 
   publish:
-    # Only when the owner chose destination = github-release. Creates build-NN; never edits or replaces an existing release.
-    if: ${{ inputs.destination == 'github-release' }}
+    # Only when the owner chose destination = github_releases. Creates build-NN; never edits or replaces an existing release.
+    if: ${{ inputs.destination == 'github_releases' }}
     needs: package
     runs-on: ubuntu-22.04
     permissions:
@@ -111,4 +129,4 @@ jobs:
           gh release create "build-$NN" release/* --repo "${{ github.repository }}" \
             --target "${{ inputs.source_sha }}" \
             --title "Backrooms Survivor Build $NN" \
-            --notes "Coordinated build $NN from source ${{ inputs.source_sha }}: Android APK, Windows EXE zip and Linux tar.gz built from the same commit. Verify with the SHA256SUMS and Manifest files. OTA is a separate channel and is not affected by this release."
+            --notes "Coordinated build $NN from source ${{ inputs.source_sha }}: Android APK, Windows EXE zip and Linux tar.gz built from the same commit. Verify with checksums.sha256 and build-manifest.json. OTA is a separate channel and is not affected by this release."

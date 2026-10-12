@@ -38,7 +38,7 @@ Status: **PASS** = implemented and verified here; **PASS (code)** = implemented,
 |---|---|---|---|
 | 6 | Prompts match the ACTIVE device | PASS | `GameInput.hint(kb, pad, touch)`, `prompt()`, `fill()` are the only sources. Auto-detects the last used device; touch labels are hidden unless touch is active. |
 | 7 | No keyboard/mouse glyphs or words while a controller is used | PASS | Audited: title, pause, options, controls page (keyboard table hidden), shop, perk, portal, death, character screen, name entry, story/splash skip hints, How To Play pages (the `[kb]` lines and the other schemes are hidden), tips and tip footer, overlays (stats / map / controls), HUD quick-item row. |
-| 8 | Xbox-style names, one function so real glyph textures can replace them | PASS | `GameInput.PAD_NAMES`. Real Steam Input glyph textures need GodotSteam (not included), swap the body of `prompt()` / `pad_name()`. |
+| 8 | Real controller glyph art with one swap point | PASS (code; art verified by screenshot) | The owner-supplied CC0 "Input Prompts" pack (`godot/assets/glyphs/`) is drawn inline for `[Token]` prompts via `scripts/ui/glyphs.gd` + `UITheme`. Family (Xbox / PS5 / PS4 / Switch) follows the connected pad's name; Steam Deck / unknown pads use Xbox. Tokens with no glyph in a family (e.g. Menu/View on Xbox) fall back to plain text. Covered by `regression_tests.gd`. Options > Gamepad > Button Prompts forces Xbox / PlayStation / Switch art (Auto follows the pad; stored additively in options.json, old saves load as Auto). Not done: keyboard/mouse glyphs, Steam Input action-origin glyphs (need GodotSteam). |
 
 ### Text input
 | # | Requirement | Status | Notes |
@@ -190,7 +190,7 @@ rumble on a physical pad.
    fill in the store page, capsule art (header, capsule, hero, logo), screenshots (the Deck ones should show controller prompts), trailer.
 2. **Release builds**: export non-debug presets (Windows + Linux x86_64) so the OTA updater is compiled out of reach;
    add them to `export_presets.cfg` (copy "Windows Dev" / "Linux Dev" without debug) and CI.
-3. **SteamPipe**: one depot per OS (Windows, Linux), launch options `BackroomsSurvivor.exe` / `BackroomsSurvivor.x86_64`, set the Linux
+3. **SteamPipe** (templates + blocker note in `tools/steampipe/`, nothing uploaded): one depot per OS (Windows, Linux), launch options `BackroomsSurvivor.exe` / `BackroomsSurvivor.x86_64`, set the Linux
    executable bit in the depot (the tar.gz keeps it; SteamPipe needs `chmod +x` in the build script or "executable" file flag).
    Mark the Linux depot for SteamOS or rely on Proton for Windows, or ship both (native is preferred).
 4. **Steam Cloud** (optional): Auto-Cloud root `WinAppDataRoaming` (Windows) / `LinuxXdgDataHome` (Linux), subdirectory

@@ -1,0 +1,15 @@
+"appbuild"
+{
+	// TEMPLATE ONLY. Replace every @PLACEHOLDER@ from Steamworks. Do not commit real IDs or credentials.
+	// Never run from CI without owner approval; uploading is a manual, owner-initiated act.
+	"appid" "@STEAM_APP_ID@"
+	"desc" "Backrooms Survivor Build @BUILD_NN@ (source @SOURCE_SHA@)"
+	"buildoutput" "..\output"
+	"contentroot" "..\content"
+	"setlive" ""
+	"depots"
+	{
+		"@WINDOWS_DEPOT_ID@" "depot_build_windows.vdf"
+		"@LINUX_DEPOT_ID@" "depot_build_linux.vdf"
+	}
+}

@@ -1,0 +1,19 @@
+"DepotBuild"
+{
+	"DepotID" "@LINUX_DEPOT_ID@"
+	"ContentRoot" "linux"
+	"FileMapping"
+	{
+		"LocalPath" "*"
+		"DepotPath" "."
+		"recursive" "1"
+	}
+	// the game executable must keep its execute bit
+	"FileProperties"
+	{
+		"LocalPath" "BackroomsSurvivor.x86_64"
+		"DepotPath" "BackroomsSurvivor.x86_64"
+		"Attributes" "executable"
+	}
+	"FileExclusion" "steam_appid.txt"
+}

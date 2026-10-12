@@ -27,6 +27,11 @@ on:
         required: false
         type: number
         default: 3
+      platform:
+        description: Which platform(s) to build - all (default, required for a coordinated release) or one of android, windows, linux. The OTA patch pack is always built.
+        required: false
+        type: string
+        default: all
       build_number:
         description: Coordinated build number stamped into every platform (empty = this run's number, the legacy behaviour)
         required: false
@@ -63,6 +68,7 @@ jobs:
       - name: Pin the approved source revision
         id: pin
         run: |
+          python3 tools/platforms.py check "${{ inputs.platform }}"
           SHA="$(git rev-parse HEAD)"
           if [ "$SHA" != "${{ inputs.sha }}" ]; then
             echo "::error::checked-out $SHA != requested ${{ inputs.sha }}"; exit 1
@@ -147,6 +153,7 @@ jobs:
         run: godot --headless --import || true
 
       - name: Export Windows (debug)
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
         working-directory: godot
         run: |
           mkdir -p build/windows build/out
@@ -157,6 +164,7 @@ jobs:
       # Native Linux (Steam Deck / SteamOS / any x86_64 distro). Single self-contained executable (embedded pck).
       # Required: a failure here fails the whole release (no silent platform skips).
       - name: Export Linux (debug)
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'linux' }}
         working-directory: godot
         run: |
           mkdir -p build/linux build/out
@@ -180,6 +188,7 @@ jobs:
 
       # Required: a failure here fails the whole release (no silent platform skips).
       - name: Export Android (debug)
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
         working-directory: godot
         run: |
           # Godot 4.3 needs cmdline-tools, platform-tools, build-tools 34.0.0 and platform android-34.
@@ -223,6 +232,8 @@ jobs:
         working-directory: godot
         run: |
           SRC="${{ needs.guard.outputs.sha }}"
+          PLAT="${{ inputs.platform }}"
+          want() { [ "$PLAT" = all ] || [ "$PLAT" = "$1" ]; }
           art() { # platform file config
             F="build/out/$2"
             [ -s "$F" ] || { echo "::error::required artifact missing: $2"; exit 1; }
@@ -234,11 +245,14 @@ jobs:
             printf ' "engine": "%s",\n "toolchain": {"godot_ci_image": "barichello/godot-ci:4.3", "java": "%s", "android_build_tools": "34.0.0", "android_platform": "android-34"},\n' \
               "$(godot --version | head -1)" "$(java -version 2>&1 | grep -m1 -i 'version' | tr -d '"\\')"
             printf ' "source": {"repo": "%s", "sha": "%s", "ref": "%s", "workflow_run": "%s"},\n' "${{ github.repository }}" "$SRC" "${{ inputs.source_ref }}" "${{ github.run_id }}"
+            printf ' "platforms": "%s",\n' "$PLAT"
             printf ' "artifacts": [\n  '
-            art windows BackroomsSurvivor-windows-dev.zip debug; printf ',\n  '
-            art linux BackroomsSurvivor-linux-dev.tar.gz debug; printf ',\n  '
-            art android BackroomsSurvivor-dev.apk debug-signed; printf ',\n  '
-            art patch patch.pck ota-patch
+            LIST=()
+            want windows && LIST+=("$(art windows BackroomsSurvivor-windows-dev.zip debug)")
+            want linux && LIST+=("$(art linux BackroomsSurvivor-linux-dev.tar.gz debug)")
+            want android && LIST+=("$(art android BackroomsSurvivor-dev.apk debug-signed)")
+            LIST+=("$(art patch patch.pck ota-patch)")
+            for i in "${!LIST[@]}"; do [ "$i" -gt 0 ] && printf ',\n  '; printf '%s' "${LIST[$i]}"; done
             printf '\n ]}\n'
           } > build/out/release_manifest.json
           cat build/out/release_manifest.json
@@ -263,14 +277,14 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: out
       - name: Verify release manifest, hashes and SHA parity
-        run: python3 tools/verify_release.py out --sha "${{ needs.guard.outputs.sha }}" --require windows,linux,android,patch
+        run: python3 tools/verify_release.py out --sha "${{ needs.guard.outputs.sha }}" --require "$(python3 tools/platforms.py require "${{ inputs.platform }}")"
       - name: Verify each artifact independently (format + embedded source SHA)
-        run: python3 tools/verify_artifacts.py out --sha "${{ needs.guard.outputs.sha }}"
+        run: python3 tools/verify_artifacts.py out --sha "${{ needs.guard.outputs.sha }}" --platforms "${{ inputs.platform }}"
       - name: Summary
         run: |
           {
             echo "### Build verified"
             echo "- source SHA: \`${{ needs.guard.outputs.sha }}\` (mode: ${{ inputs.mode }})"
             echo "- ref: ${{ inputs.source_ref }}"
-            echo "- artifacts: windows, linux, android, patch - all built from that SHA and verified independently"
+            echo "- artifacts: ${{ inputs.platform }} (+ patch) - all built from that SHA and verified independently"
           } >> "$GITHUB_STEP_SUMMARY"

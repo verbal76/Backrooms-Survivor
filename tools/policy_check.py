@@ -23,7 +23,7 @@ if "SINGLE-SOURCE-OF-TRUTH POLICY" not in claude:
 if "docs/ENGINEERING_POLICY.md" not in claude:
     errs.append("CLAUDE.md must link docs/ENGINEERING_POLICY.md")
 for f in ("docs/ENGINEERING_POLICY.md", "docs/PLATFORM_SUPPORT.md", "docs/BRANCH_LEDGER.md", "tools/verify_release.py",
-          "tools/branch_inventory.sh", "tools/verify_artifacts.py", "docs/RELEASES.md", "godot/tools/smoke_test.gd", "godot/tools/regression_tests.gd"):
+          "tools/branch_inventory.sh", "tools/verify_artifacts.py", "tools/test_release_tools.py", "tools/platforms.py", "docs/RELEASES.md", "godot/tools/smoke_test.gd", "godot/tools/regression_tests.gd"):
     read(f)
 
 wfdir = os.path.join(root, ".github", "workflows")
@@ -51,7 +51,7 @@ if "uses: ./.github/workflows/build-all.yml" not in release_build or "workflow_d
     errs.append("release-build.yml must be a manual workflow_dispatch that calls the shared build-all.yml")
 if re.search(r"^\s*(push|pull_request|schedule):", release_build, re.M):
     errs.append("release-build.yml must stay manual-only (no push/pull_request/schedule trigger)")
-if "releases/download/dev" in release_build or "gh release delete dev" in release_build:
+if re.search(r"gh release (delete|create|edit|upload)\s+dev\b", release_build) or "--prerelease" in release_build:
     errs.append("release-build.yml must never touch the OTA `dev` release")
 if re.search(r"gh release|contents:\s*write|--prerelease", validate):
     errs.append("validate-build.yml must never publish (no gh release / contents: write)")

@@ -73,10 +73,43 @@ tracked changes (one untracked `crow_sheet.png.import` was already committed on 
 - **L-3:** `main` lags `dev` by design (see `docs/RELEASES.md`): no protection or workflow requires it to match; it is fast-forwarded to a released `dev` SHA only with owner approval.
 - **L-4:** 12 local `worktree-agent-*` branches exist only locally. All their work is on `dev`; delete them only with approval.
 
-## Owner decisions pending (RED - not executed by agents)
-- R-1: fast-forward `main` to a validated `dev` SHA (stale unguarded workflow on `main`).
-- R-2: stop `dev-build.yml` auto-publishing the OTA channel on push to `dev` (master standard: OTA publication manual).
-- R-3: OTA authenticity signature + known-good retention/rollback (boot code => native build + `min_base_build.txt` bump).
-- R-4: release signing (currently debug-signed), Steamworks / GodotSteam / Steam Cloud / Steam text input.
-- R-5: first hosted run of `release-build.yml`; licence confirmation for Blackcraft.ttf and audio (docs/THIRD_PARTY_ASSETS.md).
-- R-6: physical-device testing (phone, Windows, Linux, Steam Deck).
+## Owner decision register R-1 .. R-6 (resolved 2026-10-12 for everything an agent may do)
+Original wording of each item is kept in the first line.
+
+**R-1 - "fast-forward `main` to a validated `dev` SHA (stale unguarded workflow on `main`)". RED.**
+`main` = `33c8e64`, which still carries the old `dev-build.yml` (push trigger, `continue-on-error`, no SHA guard). `dev` = `222225a`;
+the PR #4 branch contains both and is 12 commits ahead of `dev`. Alternatives: (a) leave as is until release; (b) validate the PR
+branch, merge it into `dev`, then fast-forward `main` to that exact SHA; (c) merge PR #4 straight into `main` (its current base)
+and fast-forward `dev`. Consequences: no effect on saves, Android/Windows/Linux artifacts or OTA until a push to `dev` happens;
+Steam: none. Recommendation: (b), after the owner signs off. Needs the owner (protected branch). Action taken: none.
+
+**R-2 - "stop `dev-build.yml` auto-publishing the OTA channel on push to `dev`". RED.**
+Every push to `dev` replaces the rolling `dev` prerelease and so what installed dev builds download. Alternatives: (a) keep;
+(b) replace the push trigger with a manual `workflow_dispatch`-only OTA publish; (c) keep automatic OTA but only from a manual
+release. Consequences: (b) removes the accidental-publish path (matches the master standard); installed players keep working
+(same manifest URL); the OTA and coordinated build numbers must share one sequence (see docs/RELEASES.md ledger caveat).
+Recommendation: (b), implemented together with R-1. RED because it changes the production OTA pipeline. Action taken: documented,
+a build-number guard (coordinated number must exceed the OTA channel build) added to `release-build.yml`; `dev-build.yml` unchanged.
+
+**R-3 - "OTA authenticity signature + known-good retention/rollback (boot code => native build + `min_base_build.txt` bump)". RED.**
+Verified in code (docs/UPDATES.md): SHA-256 integrity, staged download, safe fallback to base on interruption; no signature, no rollback.
+Alternatives: (a) accept for dev/test builds and keep OTA out of store builds; (b) add Ed25519 signature check + keep previous patch with
+crash-count rollback (needs boot code change => new native APK, `min_base_build` bump, players reinstall once). Recommendation: (a) now,
+(b) before OTA is offered beyond the owner's own test devices. RED (native runtime / installed-player compatibility). Action: none.
+
+**R-4 - "release signing (currently debug-signed), Steamworks / GodotSteam / Steam Cloud / Steam text input". RED.**
+Debug keystore signs the APK; no release keystore exists (changing signing = players cannot update in place). Steam needs release
+export presets without the OTA updater (preset change => native build decision), an App ID, depots, optional GodotSteam. Alternatives:
+create a release keystore stored only in a GitHub secret and used by a separate manual job; or keep debug-signed for the test channel.
+Recommendation: owner creates the release keystore + Steam app; agents then add release presets and the signing job. Prepared (GREEN):
+`tools/steampipe/` templates with placeholders. Action: none beyond templates.
+
+**R-5 - "first hosted run of `release-build.yml`; licence confirmation for Blackcraft.ttf and audio". RED (hosted build + legal).**
+Workflow logic is locally tested (`tools/test_release_tools.py`, actionlint, policy_check) but never executed on GitHub. Recommendation:
+after R-1/R-2, run once with `platform=all`, `destination=local_only` on a validated `dev` SHA, then inspect artifacts before any
+`github_releases` run. Licences: the owner must supply the source/licence for the font and each music/sound file (docs/THIRD_PARTY_ASSETS.md);
+if unobtainable, replace with CC0 assets. Action: inventory and attribution list kept current.
+
+**R-6 - "physical-device testing (phone, Windows, Linux, Steam Deck)". RED (requires hardware and the owner).**
+Nothing has been run on real devices; all evidence is headless/software-rendered. Checklist: docs/STEAM_HARDWARE_CHECKLIST.md.
+Recommendation: one pass per device class before any public release. Action: none possible by an agent.

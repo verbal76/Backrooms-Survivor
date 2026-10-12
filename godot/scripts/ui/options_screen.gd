@@ -64,6 +64,7 @@ func _on_bound() -> void:
 	dz["fmt"] = pct
 	var aim := pad_menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
 	aim["enabled"] = func(): return ui.difficulty < 3
+	pad_menu.add_choice("Button Prompts", func(): return GameOptions.PROMPT_STYLES[clampi(o.prompt_style, 0, GameOptions.PROMPT_STYLES.size() - 1)], func(d): o.prompt_style = posmod(o.prompt_style + d, GameOptions.PROMPT_STYLES.size()))
 	pad_menu.add_toggle("System Keyboard", func(): return o.steam_keyboard, func(_d): o.steam_keyboard = not o.steam_keyboard)
 	pad_menu.add_button("[ BUTTON LAYOUT ]", func(): _open_section("controls"))
 	pad_menu.add_button("[ BACK ]", func(): _open_section("main"))

@@ -38,6 +38,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Repository policy check
         run: python3 tools/policy_check.py
+      - name: Release tooling tests (provenance, packaging, platform selector)
+        run: python3 tools/test_release_tools.py
 
   tests:
     runs-on: ubuntu-22.04
