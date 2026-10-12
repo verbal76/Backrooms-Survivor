@@ -112,3 +112,17 @@ perk/meta-upgrade values, enemy hp/damage/speed base table, enemy reach.
 - `ui.gd` tables are duplicated from `enemies.gd` (`enemies.set_difficulty` uses its own). Keep both identical.
 - Sim noise is large (run-to-run spread is often 2x); use 8+ seeds when re-tuning. A full 30 min Easy run takes ~2 min of wall time.
 - Meta upgrades (Constitution etc.) are not modelled in the sim (fresh profile). Players with many upgrades will outlast these numbers.
+
+## Re-check after crows and traps were added (2026-10-12, commit b9198f6)
+Same bot (machete, kite), 2 seeds per difficulty, 1800 s cap, no script errors in any run. No retuning was needed.
+
+| Difficulty | Seed 21 | Seed 22 | Target |
+|---|---|---|---|
+| Normal (2) | died day 7 (741 s) | died day 7 (781 s) | day 5-8 |
+| Getting Worse (3) | died day 3 (350 s) | died day 5 (573 s) | day 3-5 |
+| Hell (4) | died day 2 (122 s) | died day 2 (143 s) | day 2-3 |
+| Easy (1, 1 seed, 400 s) | alive, day 4, 170 max HP | - | day 8-12 (earlier measured 12) |
+
+Crows account for 5-25% of damage taken (up to 129 on one Getting Worse run), skin stealers remain the largest killer on the
+hard modes. Easy was not re-run to death (about 6 min of wall time per 30 sim-minutes); re-run
+`tools/run_balance.py --diffs 1 --seeds 1-4` before a balance-sensitive release.
