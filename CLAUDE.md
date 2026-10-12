@@ -16,8 +16,9 @@ Every abandoned branch must be accounted for before valuable work is discarded.
    never separate versions. Platform differences are isolated (input schemes in `systems/input.gd`, `scripts/platform/*`,
    per-target export presets) and documented in `docs/PLATFORMS.md`. A fix for one platform is evaluated for all of them.
    Do not change gameplay, balance, physics or content per platform.
-2. **Authoritative line = `dev`** (the integration/release branch; it must always contain `main`). `main` is the protected
-   production branch: merges into it need owner approval. Feature/agent/repair branches are temporary workspaces: they
+2. **Authoritative line = `dev`** (the integration/release branch; it must always contain `main`). `main` is only the record of
+   owner-approved releases (fast-forward from a validated `dev` SHA, owner approval required) - never a second source of truth.
+   See `docs/RELEASE.md`. Feature/agent/repair branches are temporary workspaces: they
    start from the current `dev`, have one purpose, and are merged back into `dev` after validation. Never maintain a
    branch (or branch name) per platform, never fork the app per agent, never leave finished work unmerged.
 3. **Agents/worktrees:** branch from current `dev` (`git merge`/branch from it first), keep changes scoped, report the
@@ -26,7 +27,8 @@ Every abandoned branch must be accounted for before valuable work is discarded.
 4. **Releases:** all artifacts of one release come from the SAME full source SHA, pinned by the `guard` job of
    `.github/workflows/dev-build.yml`, recorded in `release_manifest.json`, and checked by `tools/verify_release.py`.
    No platform step may be skipped silently (no `continue-on-error`). If a platform fails, the release fails.
-   Publishing/OTA only happens through that workflow on `dev`; agents must not publish, trigger releases or deploy OTA
+   `validate-build.yml` runs the same build/verify jobs without publishing (use it on PRs). Publishing/OTA only happens through
+   `dev-build.yml` on `dev` (a push to `dev` publishes!); agents must not publish, trigger releases or deploy OTA
    unless the owner explicitly asks in the current conversation.
 5. **OTA:** keep the existing pipeline (`godot/scripts/patcher.gd`, `boot.gd`, `min_base_build.txt`, `manifest.json`). If boot
    code, export presets, engine version or Android permissions change, bump `godot/min_base_build.txt` (a native build is
@@ -41,6 +43,7 @@ Every abandoned branch must be accounted for before valuable work is discarded.
 - `godot --headless --path godot -s tools/smoke_test.gd` - shared smoke test (must print `SMOKE TEST PASSED`).
 - `tools/branch_inventory.sh origin/dev` - read-only branch accounting.
 - `python3 tools/verify_release.py <out-dir> --sha <40-char-sha>` - release manifest / SHA-parity gate.
+- `python3 tools/verify_artifacts.py <out-dir> --sha <40-char-sha>` - opens each platform artifact and checks the embedded source SHA.
 
 ## Working in `godot/` (quick rules)
 - GDScript 4.3; headless import first: `godot --headless --import --path godot`.

@@ -1,0 +1,43 @@
+name: Validate build (non-publishing)
+
+# Exercises the REAL build and verification jobs (build-all.yml) for every platform from one pinned source SHA,
+# but NEVER publishes: no release, no tag, no OTA, no write permissions. Artifacts are kept only as short-lived
+# workflow artifacts. A failure on any required platform fails this workflow.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "godot/**"
+      - "tools/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    uses: ./.github/workflows/build-all.yml
+    with:
+      sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      mode: validate
+      source_ref: ${{ github.event.pull_request.head.ref && format('refs/heads/{0}', github.event.pull_request.head.ref) || github.ref }}
+      artifact_name: validation-release-files
+      retention_days: 3
+
+  result:
+    # Single required-check style gate: succeeds only if every platform build and verification succeeded.
+    needs: validate
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Overall validation result
+        run: |
+          echo "validate job result: ${{ needs.validate.result }}"
+          [ "${{ needs.validate.result }}" = "success" ] || { echo "::error::build validation FAILED"; exit 1; }
+          echo "Validated source ${{ needs.validate.outputs.sha }} (no release published)" | tee -a "$GITHUB_STEP_SUMMARY"
