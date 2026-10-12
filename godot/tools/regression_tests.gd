@@ -18,6 +18,8 @@ func _init() -> void:
 	g.start_run()
 	await _frames(10)
 	t_draw_order_and_day()
+	t_tutorial_matches_code()
+	t_controller_prompts_are_pure()
 	await t_enemy_attack_cycle()
 	await t_no_flee_or_hover()
 	await t_tired_swing_still_hits()
@@ -108,6 +110,20 @@ func t_save_integrity() -> void:
 	var p2 = P.new()
 	p2.load_save()
 	_ok("fully corrupt save loads empty without crashing", p2.characters.size() == 0)
+	# crash between "tmp written" and "tmp renamed": a complete .tmp is newer than the save and must win
+	var older := JSON.stringify({"version": 3, "characters": [{"name": "OLD", "profiles": [], "tips": []}]})
+	var newer := JSON.stringify({"version": 3, "characters": [{"name": "NEW", "profiles": [], "tips": []}]})
+	FileAccess.open(file, FileAccess.WRITE).store_string(older)
+	FileAccess.open(file + ".tmp", FileAccess.WRITE).store_string(newer)
+	var p3 = P.new()
+	p3.load_save()
+	_ok("complete .tmp (interrupted save) is recovered", p3.characters.size() == 1 and p3.characters[0].name == "NEW")
+	# a truncated .tmp must never beat a valid save
+	FileAccess.open(file + ".tmp", FileAccess.WRITE).store_string('{"version": 3, "characters": [{"name": "HAL')
+	var p4 = P.new()
+	p4.load_save()
+	_ok("truncated .tmp is ignored", p4.characters.size() == 1 and p4.characters[0].name == "OLD")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(file + ".tmp"))
 	# restore the real files
 	for suffix in ["", ".bak"]:
 		if keep.has(suffix):
@@ -210,3 +226,57 @@ func t_press_survives_hitstop() -> void:
 	g.hitstop(0.2)
 	await _frames(40)
 	_ok("a bomb press during hit-stop is not dropped", g.weapons.bomb.count == c0 - 1, "bombs %d -> %d" % [c0, g.weapons.bomb.count])
+
+
+## The tutorial quotes game numbers; it must not drift from the code again (it did after the balance pass).
+func t_tutorial_matches_code() -> void:
+	var T = load("res://scripts/ui/tutorial_data.gd")
+	var all := ""
+	for pg in T.PAGES:
+		all += " ".join(pg.lines) + " "
+	for k in T.TIPS:
+		all += str(T.TIPS[k].text) + " "
+	var S: Dictionary = load("res://scripts/player.gd").S
+	_ok("tutorial states the real stamina regen", all.contains("(%d per second)" % int(S.stamina_regen)), "regen %s" % S.stamina_regen)
+	_ok("tutorial states the real sprint cost", all.contains("costs %d stamina per second" % int(S.sprint_cost)))
+	_ok("tutorial no longer claims enemies flee from light", not all.contains("flee when they stand") and not all.contains("run when your headlamp"))
+	var types: Dictionary = g.enemies.TYPES
+	var lo := 99.0
+	var hi := 0.0
+	for k in types:
+		lo = minf(lo, float(types[k].windup))
+		hi = maxf(hi, float(types[k].windup))
+	_ok("tutorial states the real wind-up range", all.contains("%s to %s seconds" % [str(lo), str(hi)]), "range %s-%s" % [lo, hi])
+
+
+## Valve requirement: while a controller is the active input, no keyboard/mouse wording or glyphs may appear.
+func t_controller_prompts_are_pure() -> void:
+	var banned := ["enter", "esc", "click", "mouse", "space", "tab", "shift", "ctrl", "wasd", "arrow", "f1", "f2", "keyboard", "wheel", "cursor"]
+	var T = load("res://scripts/ui/tutorial_data.gd")
+	var bad: Array[String] = []
+	for entry in g.input.ACTIONS:
+		var a: String = entry.id
+		var txt: String = g.input.prompt(a, "gamepad").to_lower()
+		for b in banned:
+			if txt.contains(b):
+				bad.append("%s -> %s" % [a, txt])
+	for a in ["accept", "back", "menu", "move", "aim"]:
+		var txt2: String = g.input.prompt(a, "gamepad").to_lower()
+		for b in banned:
+			if txt2.contains(b):
+				bad.append("%s -> %s" % [a, txt2])
+	# every tutorial line that is shown on a pad (no [kb]/[touch] prefix) must be keyboard-free after fill()
+	for pg in T.PAGES:
+		for line in pg.lines:
+			if line.begins_with("[kb]") or line.begins_with("[touch]"):
+				continue
+			var t: String = g.input.fill(line, "gamepad").to_lower()
+			for b in ["click", "mouse", "keyboard", "[enter]", "[esc]", "wasd", "wheel"]:
+				if t.contains(b):
+					bad.append("page '%s': %s" % [pg.title, line.substr(0, 60)])
+	for k in T.TIPS:
+		var tt: String = g.input.fill(str(T.TIPS[k].text), "gamepad").to_lower()
+		for b in ["click", "mouse", "keyboard", "[enter]", "[esc]", "wasd", "wheel"]:
+			if tt.contains(b):
+				bad.append("tip %s" % k)
+	_ok("no keyboard/mouse wording in gamepad prompts, tutorial pages or tips", bad.is_empty(), "; ".join(bad.slice(0, 6)))

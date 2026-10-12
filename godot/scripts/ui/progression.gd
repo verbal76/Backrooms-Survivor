@@ -329,11 +329,15 @@ func _try_read(path: String) -> Variant:
 
 
 func load_save() -> void:
-	var result: Variant = _try_read(SAVE_FILE)
+	# Order: a COMPLETE .tmp (crash between writing it and renaming it over the save: newest data), then the
+	# save, then the .bak. An unfinished .tmp fails to parse and is ignored, so partial writes never win.
+	var result: Variant = _try_read(SAVE_FILE + ".tmp")
+	if result == null:
+		result = _try_read(SAVE_FILE)
 	if result == null:
 		result = _try_read(SAVE_FILE + ".bak")
-		if result == null:
-			return
+	if result == null:
+		return
 	characters.clear()
 	for ch in result.get("characters", []):
 		if not (ch is Dictionary) or not ch.has("name"):
