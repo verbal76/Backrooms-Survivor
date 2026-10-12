@@ -112,6 +112,17 @@ jobs:
             echo "::error::shared smoke test failed"; exit 1
           fi
 
+      - name: Regression tests (defects found in playtesting must stay fixed)
+        working-directory: godot
+        run: |
+          set +e
+          godot --headless -s tools/regression_tests.gd 2>&1 | tee /tmp/regression.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" != "0" ] || grep -Eq "SCRIPT ERROR|Parse Error|^FAIL " /tmp/regression.log || ! grep -Eq "REGRESSION TESTS: [0-9]+ passed, 0 failed" /tmp/regression.log; then
+            echo "::error::regression tests failed"; exit 1
+          fi
+
       - name: Install export templates
         run: |
           mkdir -p ~/.local/share/godot/export_templates

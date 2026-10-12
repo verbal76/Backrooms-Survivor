@@ -41,6 +41,7 @@ Every abandoned branch must be accounted for before valuable work is discarded.
 ### Enforcement (run these; CI runs them)
 - `python3 tools/policy_check.py` - this policy exists and the release workflow has not regressed.
 - `godot --headless --path godot -s tools/smoke_test.gd` - shared smoke test (must print `SMOKE TEST PASSED`).
+- `godot --headless --path godot -s tools/regression_tests.gd` - regression tests for playtest defects (all must PASS).
 - `tools/branch_inventory.sh origin/dev` - read-only branch accounting.
 - `python3 tools/verify_release.py <out-dir> --sha <40-char-sha>` - release manifest / SHA-parity gate.
 - `python3 tools/verify_artifacts.py <out-dir> --sha <40-char-sha>` - opens each platform artifact and checks the embedded source SHA.

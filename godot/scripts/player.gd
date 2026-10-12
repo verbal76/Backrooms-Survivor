@@ -88,6 +88,7 @@ var lamp: PointLight2D
 
 
 func _ready() -> void:
+	z_index = 1   # draw above enemies/props (big enemies used to cover the player); weapons are z 2
 	_sprite = Sprite2D.new()
 	_sprite.texture = preload("res://assets/sprites/player_spritesheet.png")
 	_sprite.hframes = FRAMES
