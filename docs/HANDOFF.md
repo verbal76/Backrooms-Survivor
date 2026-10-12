@@ -27,7 +27,7 @@ against the Lua game plus owner-requested additions; builds are verified; no own
   and icon (Hot Attic Games). Balance retuned (`godot/docs/BALANCE.md`).
 - **Platforms:** Android APK, Windows zip, Linux tar.gz (Steam Deck native), all from one source/SHA via `.github/workflows/build-all.yml`.
 - **Policy/CI:** single-source-of-truth policy (`docs/ENGINEERING_POLICY.md`), ledger (`docs/BRANCH_LEDGER.md`), `validate-build.yml`
-  (non-publishing, runs on PRs), `dev-build.yml` (publishes - **a push to `dev` publishes**, needs owner approval), smoke + regression tests.
+  (non-publishing, runs on PRs), `dev-build.yml` (manual, authorized OTA publish; no automatic trigger), `release-build.yml` (manual coordinated release), smoke + regression tests.
 - **Tests:** `tools/policy_check.py`, `godot/tools/smoke_test.gd`, `godot/tools/regression_tests.gd` (17 checks), balance sim
   (`godot/tools/balance_sim.gd`). CI validation of the full build+verify pipeline passed on `f096650` and `f9e2dec`; a deliberate
   Linux failure (`37c2f70`) failed the whole run as designed.
@@ -61,7 +61,7 @@ Rule: **anything whose license forbids redistribution does not go in the public 
 Status of the files: the restricted/unlicensed uploads were deleted from the session and scratch space. The owner still has the originals locally. The only trace in the repo is `godot/assets/office_pack/README.md` and the `.gitignore` lines for it. CC0 packs (textures, traps, KayKit, monsters) were extracted only in scratch space. Re-upload what's needed.
 
 ## Open decisions for the owner
-1. Authorize a release: push/merge validated work to `dev` (publishes the rolling prerelease) and optionally fast-forward `main`.
+1. Authorize a release: dispatch `release-build.yml` (or `dev-build.yml` for OTA) manually; pushing/merging never publishes.
 2. License of the sound pack; license/author of scarymobs; final art direction (Blender sprites vs pixel packs).
 3. Delete stale branches (12 local `worktree-agent-*`, PR #2/#1 branches) only when you say so.
 4. Steam: Steamworks app id, SteamPipe, release export presets, GodotSteam (see `docs/STEAM_HARDWARE_CHECKLIST.md`).

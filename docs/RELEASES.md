@@ -21,15 +21,15 @@ authorizes a release they may fast-forward `main` to the released `dev` SHA; unt
 - `validate-build.yml`: runs `build-all.yml` in `validate` mode on pull requests (and manual dispatch). Read-only
   permissions, never publishes. This is how changes are proven before they reach `dev`.
 - `release-build.yml` (manual only): the coordinated release (see "Coordinated releases" below).
-- `dev-build.yml`: on push to `dev`, runs `build-all.yml` in `release` mode (SHA must equal the tip of `dev`) and, only
-  if verification succeeded, replaces the rolling `dev` prerelease. **Pushing to `dev` publishes**, so it requires owner
-  authorization.
+- `dev-build.yml` (manual only): authorized OTA publication of the rolling `dev` prerelease (see docs/UPDATES.md). **It has no automatic
+  trigger**: pushing/merging to `dev` publishes nothing.
 
 ## Release steps (owner-authorized)
 1. Work lands on `dev` through a validated PR (the `validate-build` check must be green).
-2. Owner approves publication; push/merge to `dev`. `dev-build.yml` builds, verifies and publishes.
-3. Check `release_manifest.json` in the release: one source SHA for all four artifacts.
-4. Optionally (owner approval) fast-forward `main` to that SHA.
+2. Owner decides what to ship and dispatches `release-build.yml` (coordinated native build) and/or `dev-build.yml` (OTA) manually,
+   using the next number in the single sequence. Each run authorizes the dispatcher, re-checks the sequence and re-verifies provenance.
+3. Check `build-manifest.json` / `release_manifest.json`: one source SHA for every artifact.
+4. `main` is fast-forwarded to the released `dev` SHA.
 
 ## OTA
 Unchanged: debug builds fetch `manifest.json` + `patch.pck` from the rolling release. Changes to boot code, export
@@ -51,8 +51,7 @@ presets, engine version or Android permissions need a new native build: bump `go
 ## Coordinated releases (`release-build.yml`, manual, never automatic)
 Inputs: `platform` (`all` | `android` | `windows` | `linux`), `source_sha` (full SHA, must be the tip of `dev`),
 `build_number` (integer), `destination` (`local_only` | `github_releases`, default `local_only`).
-Preflight refuses: a malformed SHA or a SHA that is not the tip of `dev`; a build number that is not greater than every
-existing `build-NN` tag **and** than the build the OTA channel serves; an existing `build-NN` tag; `github_releases`
+Preflight refuses: a malformed SHA or a SHA that is not the tip of `dev`; a dispatcher without the admin/maintain role, a ref other than `dev`, a build number that is not exactly latest + 1 of the single sequence (duplicates, stale numbers and gaps); `github_releases`
 with anything but `platform=all` (a coordinated release never ships a missing platform).
 Flow: preflight -> `build-all.yml` (one SHA, ONE build number stamped into build info, Android versionCode and the OTA
 manifest; verified for exactly the requested platforms) -> `package_release.py` -> optional publish.
@@ -66,13 +65,9 @@ Release signing is still debug-signed (R-4).
 | Build | Kind | Source | Notes |
 |---|---|---|---|
 | 12 | rolling OTA prerelease `dev` ("Dev build 12") | `222225a` | the only release/tag in the repository; no `build-NN` tag exists |
-Rule: a coordinated build number must exceed 12 (and every later OTA build). **Caveat:** an installed build N ignores OTA
-patches numbered <= N (`patcher.gd`), and the OTA channel is numbered by workflow run number. Coordinated numbers
-therefore must be chosen above the OTA channel's current number, and the owner must decide (R-2) whether OTA and
-coordinated releases share one sequence before the first coordinated release is published.
+Rule: see "Single number sequence" below.
 
-## Known divergence from the studio master standard (owner decision pending)
-`dev-build.yml` still publishes the rolling OTA `dev` prerelease automatically on every push to `dev`. The master standard
-says OTA publication must be a separate, manual act. Changing it alters the production OTA pipeline, so it is recorded
-as a RED item in `docs/BRANCH_LEDGER.md` and left unchanged until the owner authorizes it. Release != OTA publication holds
-for `release-build.yml` already.
+## Single number sequence (R-2)
+Native/coordinated builds (`build-NN` tags) and OTA patches share ONE sequence: next = `max(OTA channel build, build-NN tags) + 1`
+(`tools/ci_guard.py sequence`). Because an installed build N ignores OTA patches numbered <= N, this also keeps OTA ordering valid.
+The ledger above is the starting point: next number is 13.

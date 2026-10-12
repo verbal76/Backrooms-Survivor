@@ -1,61 +1,122 @@
-name: Dev build (OTA)
+name: OTA publish (manual only)
 
-# RELEASE workflow: pushing to the `dev` branch builds Windows, Linux and Android from ONE pinned source SHA
-# (build-all.yml), verifies every artifact, and only then publishes the rolling prerelease tagged `dev`:
-#   - BackroomsSurvivor-windows-dev.zip   fresh-install Windows build (also what Steam Deck runs under Proton)
-#   - BackroomsSurvivor-linux-dev.tar.gz  fresh-install native Linux x86_64 build (Steam Deck / SteamOS / desktop)
-#   - BackroomsSurvivor-dev.apk           fresh-install Android build (debug-signed)
-#   - patch.pck + manifest.json           what dev builds download at launch (OTA)
-#   - release_manifest.json               build provenance: source SHA, versions, per-artifact sha256
-# Dev builds check manifest.json on startup, verify patch.pck's SHA-256, load it, and run.
-# Validation without publishing lives in validate-build.yml (same build-all.yml jobs).
+# MANUAL, authorized OTA publication. This is the ONLY workflow that can replace the rolling `dev` prerelease (the OTA channel
+# that installed dev builds read manifest.json from). It has NO automatic trigger: a push, merge, tag, pull request or schedule
+# can never publish. Building, testing, packaging and publishing are separate jobs; a green build never implies permission.
+#
+#   authorize -> build (build-all.yml, no write access) -> publish (re-authorizes, re-checks sequence/provenance/compat, then publishes)
+#
+# Authorization = GitHub's own context (workflow_dispatch event, ref refs/heads/dev, triggering actor, run attempt) plus the
+# initiator's repository role (admin or maintain) read from GitHub's permission API. Dispatch form values are never trusted.
+# One number sequence for native builds (tags build-NN) and OTA patches: the next number is exactly latest + 1.
+# Docs: docs/UPDATES.md, docs/RELEASES.md.
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - "godot/**"
-      - "tools/**"
-      - ".github/workflows/**"
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-char SHA to publish (must be the current tip of dev)
+        required: true
+        type: string
+      build_number:
+        description: Next number in the single build/OTA sequence (latest + 1)
+        required: true
+        type: string
+      confirm:
+        description: Type PUBLISH-OTA to confirm you intend to replace the OTA channel
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: dev-build
-  cancel-in-progress: true
+  group: build-sequence
+  cancel-in-progress: false
 
 jobs:
+  authorize:
+    runs-on: ubuntu-22.04
+    outputs:
+      sha: ${{ inputs.source_sha }}
+    steps:
+      - name: Confirmation phrase
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: '[ "$CONFIRM" = "PUBLISH-OTA" ] || { echo "::error::REFUSED: confirmation phrase missing"; exit 1; }'
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Authorization, source and sequence gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SRC: ${{ inputs.source_sha }}
+          NUM: ${{ inputs.build_number }}
+        run: tools/publish_gate.sh
+
   build:
+    needs: authorize
     uses: ./.github/workflows/build-all.yml
     with:
-      sha: ${{ github.sha }}
+      sha: ${{ inputs.source_sha }}
       mode: release
-      source_ref: ${{ github.ref }}
-      artifact_name: dev-release-files
+      source_ref: refs/heads/dev
+      artifact_name: ota-candidate-files
+      build_number: ${{ inputs.build_number }}
+      platform: all
+      retention_days: 14
 
   publish:
-    needs: build
+    needs: [authorize, build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: dev-release-files
-          path: out
-
-      - name: Publish rolling `dev` release
+          ref: ${{ needs.build.outputs.sha }}
+          fetch-depth: 0
+      - name: Re-run authorization, source and sequence gate (inside the publishing job)
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SRC: ${{ inputs.source_sha }}
+          NUM: ${{ inputs.build_number }}
+        run: tools/publish_gate.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: ota-candidate-files
+          path: out
+      - name: Re-verify provenance and OTA compatibility
+        env:
+          SRC: ${{ inputs.source_sha }}
+          NUM: ${{ inputs.build_number }}
         run: |
-          SHA="${{ needs.build.outputs.sha }}"
-          [ "$SHA" = "${{ github.sha }}" ] || { echo "::error::verified SHA $SHA != pushed ${{ github.sha }}"; exit 1; }
-          grep -q "\"sha\": \"$SHA\"" out/release_manifest.json || { echo "::error::manifest does not carry $SHA"; exit 1; }
+          [ "${{ needs.build.outputs.sha }}" = "$SRC" ] || { echo "::error::verified SHA differs from requested"; exit 1; }
+          python3 tools/verify_release.py out --sha "$SRC" --require windows,linux,android,patch
+          python3 tools/verify_artifacts.py out --sha "$SRC" --platforms all
+          python3 tools/ci_guard.py compat --manifest out/manifest.json --pck out/patch.pck \
+            --min-base-file godot/min_base_build.txt --build "$NUM" --sha "$SRC"
+      - name: Publish rolling `dev` release (OTA channel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SRC: ${{ inputs.source_sha }}
+          NUM: ${{ inputs.build_number }}
+        run: |
           ls -la out
           gh release delete dev --repo "${{ github.repository }}" --cleanup-tag --yes || true
           gh release create dev out/* --repo "${{ github.repository }}" \
-            --target "$SHA" --prerelease \
-            --title "Dev build ${{ github.run_number }}" \
-            --notes "Rolling dev build ${{ github.run_number }} from source $SHA (all platforms identical source; see release_manifest.json). Dev builds update themselves from manifest.json; use the zip / tar.gz / apk for a fresh install (Linux: tar xzf, then ./BackroomsSurvivor.x86_64)."
+            --target "$SRC" --prerelease \
+            --title "Dev build $NUM" \
+            --notes "Rolling dev build $NUM from source $SRC, published manually by ${{ github.triggering_actor }}. Dev builds update themselves from manifest.json (see release_manifest.json for provenance)."

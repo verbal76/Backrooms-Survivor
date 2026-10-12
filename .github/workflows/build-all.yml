@@ -1,6 +1,6 @@
 name: Build all platforms (reusable)
 
-# Single build+verify pipeline used by BOTH the release workflow (dev-build.yml, publishes) and the non-publishing
+# Single build+verify pipeline used by the manual publishing workflows (dev-build.yml OTA, release-build.yml) and the non-publishing
 # validation workflow (validate-build.yml). One definition = no divergence between what is validated and what ships.
 # Every platform artifact is built from the SAME pinned source SHA; any failure fails the whole run (no skipped
 # platforms, no continue-on-error). See docs/ENGINEERING_POLICY.md and docs/RELEASES.md.

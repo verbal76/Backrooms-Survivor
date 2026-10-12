@@ -25,10 +25,12 @@ Every abandoned branch must be accounted for before valuable work is discarded.
    branch + SHA, and make sure the integrator merges it. Do not delete branches; run `tools/branch_inventory.sh` to see
    unmerged work and record disposition in `docs/BRANCH_LEDGER.md`.
 4. **Releases:** all artifacts of one release come from the SAME full source SHA, pinned by the `guard` job of
-   `.github/workflows/dev-build.yml`, recorded in `release_manifest.json`, and checked by `tools/verify_release.py`.
+   `.github/workflows/build-all.yml`, recorded in `release_manifest.json`, and checked by `tools/verify_release.py`.
    No platform step may be skipped silently (no `continue-on-error`). If a platform fails, the release fails.
    `validate-build.yml` runs the same build/verify jobs without publishing (use it on PRs). Publishing/OTA only happens through
-   `dev-build.yml` on `dev` (a push to `dev` publishes!); agents must not publish, trigger releases or deploy OTA
+   the MANUAL workflows `dev-build.yml` (OTA) and `release-build.yml` (coordinated release). Nothing publishes automatically: a push, merge, tag,
+   PR or schedule never publishes. Both gate on the dispatcher's repository role (admin/maintain), the live `dev` tip and ONE shared
+   build/OTA number sequence (latest + 1); see `docs/RELEASES.md`. Agents must not publish, dispatch these workflows, trigger releases or deploy OTA
    unless the owner explicitly asks in the current conversation.
 5. **OTA:** keep the existing pipeline (`godot/scripts/patcher.gd`, `boot.gd`, `min_base_build.txt`, `manifest.json`). If boot
    code, export presets, engine version or Android permissions change, bump `godot/min_base_build.txt` (a native build is

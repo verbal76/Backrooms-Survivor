@@ -3,7 +3,7 @@
 Permanent repository-level engineering policy (owner directive, 2026-10-12). Applies to all development, builds,
 releases and restructuring in this repository. The short operating version for agents is in `/CLAUDE.md`; this file is
 the full policy. Enforcement scripts: `tools/policy_check.py`, `tools/branch_inventory.sh`, `tools/verify_release.py`,
-`godot/tools/smoke_test.gd`, and the `guard`/`verify` jobs in `.github/workflows/dev-build.yml`.
+`godot/tools/smoke_test.gd`, and the `guard`/`verify` jobs in `.github/workflows/build-all.yml`.
 
 ## 1. Fundamental architecture rule
 One authoritative, continuously integrated source codebase. Platforms are build targets of that one source, not
@@ -87,5 +87,5 @@ integrated history, multiple build targets, no silent platform divergence, no fo
 owner-approved releases: fast-forward from a validated `dev` SHA with owner approval, never a source of new work, and
 allowed to lag. Verified facts: no branch protection and no rulesets exist, and no workflow requires `main` to match `dev`;
 the only coupling is the guard rule "the built SHA must contain `main`". Builds are validated on pull requests by
-`validate-build.yml` (non-publishing, same jobs as release) and published only by `dev-build.yml` after
+`validate-build.yml` (non-publishing, same jobs as release) and published only by the manual, authorized `dev-build.yml` (OTA) or `release-build.yml` (coordinated release) after
 verification. Details and the verification record: `docs/RELEASES.md`.
