@@ -120,7 +120,7 @@ Recommendation: one pass per device class before any public release. Action: non
   repeated inside the publish job (docs/UPDATES.md "Publishing architecture"). Enforced by `tools/workflow_rules.py` (policy_check) and
   `tools/test_release_tools.py`.
 - Validation of exactly `e33d7d9`: PR validation run 38314022771 green (policy, tests, result; `full` skipped), plus local smoke test,
-  25/25 regression checks, 110+ release-tool checks, actionlint, policy_check.
+  25/25 regression checks, 80 release-tool checks, actionlint, policy_check.
 - R-1 executed with non-forced fast-forwards of the validated SHA: `dev` `222225a` -> `e33d7d9`, then `main` `33c8e64` -> `e33d7d9`
   (both ancestors of the candidate; no commits were discarded). No branch protection blocked either push. GitHub then marked PR #4 merged.
 - No workflow run started on either push (the new `dev-build.yml` has no push trigger); the `dev` prerelease is still "Dev build 12"
