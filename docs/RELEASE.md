@@ -37,3 +37,12 @@ presets, engine version or Android permissions need a new native build: bump `go
 ## Enforcement and tools
 `python3 tools/policy_check.py`, `tools/branch_inventory.sh origin/dev`, `python3 tools/verify_release.py`,
 `python3 tools/verify_artifacts.py`, `godot --headless --path godot -s tools/smoke_test.gd`.
+
+## Verification record (non-publishing CI, 2026-10-12)
+- Run `38195511435` (PR #4 head `f09665043998c5ee364ad84031b293701f922d52`): `guard`, `build`, `verify`, `result` all green. Windows,
+  Linux, Android and OTA patch were exported from that single SHA; `verify` independently confirmed each artifact's
+  format (MZ exe + pck, ELF x86-64 with exec bit, signed arm64 APK with package id, GDPC pck) and the embedded
+  `build_info.json` carried the same full SHA. The existing `dev` release (build 12) and the `dev` branch/tag were not touched.
+- Negative test, run `38195761637` (head `37c2f70`, Linux preset deliberately broken, since reverted): `Export Linux` failed, the
+  patch/Android/manifest/upload steps were skipped, no artifact was uploaded, `verify` was skipped and `result` failed.
+  A failure on any required platform therefore fails the whole validation; nothing can publish.

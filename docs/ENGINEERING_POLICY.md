@@ -81,3 +81,11 @@ intentionally abandoned features, take destructive/irreversible actions.
 ## 13. Final operating principle
 We are developing ONE GAME that runs on Android, Windows and Linux/Steam Deck. One authoritative codebase, one
 integrated history, multiple build targets, no silent platform divergence, no forgotten completed work.
+
+## 14. Permanent branch strategy (verified 2026-10-12)
+`dev` is the single authoritative development and release source. `main` is only the default-branch record of
+owner-approved releases: fast-forward from a validated `dev` SHA with owner approval, never a source of new work, and
+allowed to lag. Verified facts: no branch protection and no rulesets exist, and no workflow requires `main` to match `dev`;
+the only coupling is the guard rule "the built SHA must contain `main`". Builds are validated on pull requests by
+`validate-build.yml` (non-publishing, same jobs as release) and published only by `dev-build.yml` after
+verification. Details and the verification record: `docs/RELEASE.md`.

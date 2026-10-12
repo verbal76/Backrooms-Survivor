@@ -8,7 +8,7 @@ file/semantic review of superseded or intentionally changed behavior. Regenerate
 **Authoritative line: `dev`** @ `222225a25d7b557b52b622783a699e00e2ac0883` (identical to
 `claude/fervent-franklin-hrrnb7` and PR #4's head; the rolling release `dev` and tag `dev` point to the same SHA).
 `main` (`33c8e64`, protected production) is an ancestor of it and 41 commits behind; bringing `main` up to date needs the
-owner's approval (merge PR #4).
+owner's approval, but nothing requires it (see `docs/RELEASE.md`).
 
 ## Branches, tags, releases
 
@@ -18,7 +18,7 @@ owner's approval (merge PR #4).
 | `claude/fervent-franklin-hrrnb7` (local+origin) | 222225a | working branch of the Godot port; PR #4 head | Integrated (identical to dev) | keep until PR #4 is merged by owner |
 | `origin/main` | 33c8e64 | protected production branch (PR #3 merged) | Integrated (ancestor), outdated | owner merges PR #4 |
 | `origin/claude/jolly-cori-g4l8rg` | 916c3e1 | PR #2: folder reorg, Godot skeleton, CC0 assets | Integrated (all commits reachable from dev; its content merged via #3/#4) | owner may close PR #2 as superseded; do not delete without approval |
-| `origin/claude/exciting-cerf-8bng06` | 075d2fd | PR #1: LÖVE shortcuts | **Unknown - owner review** (1 commit, not integrated) | see item L-1 |
+| `origin/claude/exciting-cerf-8bng06` | 075d2fd | PR #1: LÖVE shortcuts | Obsolete (machine-specific LÖVE shortcuts + local settings file); PR #1 **closed** 2026-10-12 after verification | branch preserved (not deleted); see item L-1 |
 | local `main` | f57a2ac | stale local copy of an early commit | Integrated (ancestor) | none (local only) |
 | `worktree-agent-a26b4377...` | bb4fe49 | Steam Deck / Linux pass | Integrated | local only; delete only with approval |
 | `worktree-agent-a284b0ba...` | 43e5c6a | lighting + FX + chunk visuals | Integrated | same |
@@ -65,10 +65,10 @@ tracked changes (one untracked `crow_sheet.png.import` was already committed on 
 
 ## Open items
 
-- **L-1 (owner review) `origin/claude/exciting-cerf-8bng06` @ 075d2fd, PR #1 (draft):** adds `Documentation.url`, `LOVE.lnk`,
+- **L-1 (resolved: PR closed, branch kept) `origin/claude/exciting-cerf-8bng06` @ 075d2fd, PR #1 (draft):** adds `Documentation.url`, `LOVE.lnk`,
   `Uninstall.lnk` (Windows shortcuts from a LÖVE install) and `.claude/settings.local.json` (a machine-local agent
   settings file). Not recovered: unrelated to the Godot product, machine-specific, and the settings file should not be
-  versioned. Options: leave unmerged and close PR #1, or ask for an explicit decision. No branch has been deleted.
+  versioned. Verified that no Godot functionality or installer behavior is lost (the LÖVE packaging files `_installer.iss` and `BUILD_ALL_AND_EXECUTABLE.bat` are already on `dev`). PR #1 was closed; its branch is preserved. No branch has been deleted.
 - **L-2:** PR #2 (draft) is superseded by #3/#4; owner may close it.
-- **L-3:** `main` is 41 commits behind `dev`; merge PR #4 (owner approval) to make `main` equal to the authoritative line.
+- **L-3:** `main` lags `dev` by design (see `docs/RELEASE.md`): no protection or workflow requires it to match; it is fast-forwarded to a released `dev` SHA only with owner approval.
 - **L-4:** 12 local `worktree-agent-*` branches exist only locally. All their work is on `dev`; delete them only with approval.
