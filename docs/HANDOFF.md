@@ -1,6 +1,6 @@
 # Handoff: Backrooms Survivor, LÖVE → Godot 4 port
 
-Paste this whole file into the new chat as the first message. Repo to attach: **verbal76/Backrooms-Survivor** only.
+Read `/CLAUDE.md` first (permanent policy), then this file. Repo: **verbal76/Backrooms-Survivor** only.
 **Do not touch Tartaria-RPG** (the owner does not want this work to have access to it).
 
 ## How the owner likes to work
@@ -14,36 +14,32 @@ Paste this whole file into the new chat as the first message. Repo to attach: **
 - **Goal:** port to **Godot 4.3**, targets **Windows + Android** (later Steam + Google Play, commercial), with a studio-level look and feel (lighting, shadows, post effects, proper UI) using **free/CC0 asset packs**.
 - **OTA = a dev pipeline only.** Push to GitHub → Actions builds → dev builds on the owner's PC and phone update themselves. Release builds (Steam/Play) never self-update.
 
-## Where things stand
-Repo `verbal76/Backrooms-Survivor` (public). `main` = `c88628e` (the owner's single "Add files via upload" commit).
-**Draft PR #2** (`claude/jolly-cori-g4l8rg` → `main`): https://github.com/verbal76/Backrooms-Survivor/pull/2 (nothing merged yet). Two commits:
+## Where things stand (updated 2026-10-12)
+**Stage: C - release qualification / awaiting owner and physical-device testing.** The Godot port is feature-complete
+against the Lua game plus owner-requested additions; builds are verified; no owner-authorized production release yet.
 
-1. `183a8c5` **Reorganized the flat upload into the folders the Lua code expects.** No Lua changed.
-   - `music/` (8 tracks), `sounds/` (56 files), `weapons/` (15 PNGs, from weapons.zip), `enemies/` (sprite grids + `manifest.lua`), `docs/` (3 Word docs), `world_assets/` (already a folder).
-   - Removed duplicate zips and the LÖVE engine zip.
-   - Left at the root on purpose: `player_spritesheet.png`, `enemy_*_spritesheet.png`, `Blackcraft.ttf`, `BUILD_ALL_AND_EXECUTABLE.bat`, `_installer.iss` (the code or build script loads them from there).
-2. `96ace4b` **Godot 4.3 skeleton + dev OTA pipeline** in `godot/` and `.github/workflows/dev-build.yml`.
+- **Authoritative line: `dev`** (see `docs/RELEASE.md`). `dev` = `222225a` (dev build 12 is the published rolling prerelease).
+  Working branch `claude/fervent-franklin-hrrnb7` (PR #4) is ahead of `dev` with policy/CI/test work; head at the time of
+  writing is listed under "Source" below. `main` (`33c8e64`) intentionally lags; PR #1 closed (branch kept), PR #2 superseded.
+- **Game (`godot/`):** ported player, map, combat (8 weapons, bombs), 6 enemy types incl. crows, items/orbs/props/chests/portal,
+  traps (bear/spike/pit/fire/push), progression/saves/perks, HUD/minimap/menus, tutorial + context tips + How to Play, rebindable
+  controls with auto-detect, Android touch controls, audio (OGG, synth SFX), lighting/FX/juice, Steam Deck/Linux support, studio splash
+  and icon (Hot Attic Games). Balance retuned (`godot/docs/BALANCE.md`).
+- **Platforms:** Android APK, Windows zip, Linux tar.gz (Steam Deck native), all from one source/SHA via `.github/workflows/build-all.yml`.
+- **Policy/CI:** single-source-of-truth policy (`docs/ENGINEERING_POLICY.md`), ledger (`docs/RECOVERY_LEDGER.md`), `validate-build.yml`
+  (non-publishing, runs on PRs), `dev-build.yml` (publishes - **a push to `dev` publishes**, needs owner approval), smoke + regression tests.
+- **Tests:** `tools/policy_check.py`, `godot/tools/smoke_test.gd`, `godot/tools/regression_tests.gd` (17 checks), balance sim
+  (`godot/tools/balance_sim.gd`). CI validation of the full build+verify pipeline passed on `f096650` and `f9e2dec`; a deliberate
+  Linux failure (`37c2f70`) failed the whole run as designed.
 
-### Godot skeleton (`godot/`)
-- `project.godot` (GL Compatibility renderer, 960×720, landscape), `icon.svg`, `export_presets.cfg` (presets: **Windows Dev**, **Android Dev**, **Patch**), `build_info.json`, `min_base_build.txt`.
-- `scenes/boot.tscn` + `scripts/boot.gd`: in **debug exports only** (not editor, not release), fetches `manifest.json`, downloads `patch.pck`, verifies SHA-256, loads it, then starts the game. Falls back to the installed build when offline.
-- `scripts/patcher.gd`: build info, installed-patch state in `user://patch/`, hash check, install.
-- `scenes/game.tscn` + `scripts/game.gd`: placeholder dark room, headlamp `PointLight2D` following mouse/touch, shadow-casting walls.
-- If boot code, export presets, engine version or Android permissions change, bump `min_base_build.txt` (older installs then show "needs a full install").
-- `godot/.gitignore` ignores `.godot/`, `build/` and `assets/office_pack/*`.
-
-### CI (`.github/workflows/dev-build.yml`)
-- Trigger: push to a branch named **`dev`**, or manual run. (Manual run only appears after the workflow is on the default branch, so PR #2 must be merged first.)
-- Container `barichello/godot-ci:4.3`; stamps `build_info.json` with run number + SHA; exports Windows (debug) zip, Android debug APK (`continue-on-error`), `patch.pck` + `manifest.json`; a second job republishes a rolling prerelease tagged **`dev`**.
-- **Tested locally with Godot 4.3:** project imports/runs headless, patch export, loading a patch over the base build, SHA helper.
-- **NOT tested:** the whole workflow has never run. Expect fixes, most likely the Android SDK/JDK paths inside the godot-ci container.
-
-## Known issues in the original game (not fixed)
-- `gunshot.mp3` doesn't match the `gunshot_sound` name `main.lua` searches for, so the pistol sound probably doesn't load.
-- `main.lua` looks for `carpet_tile.jpg/png` but the file is `carpet-tile.jpg`.
-- `enemies/manifest.lua` isn't `require`d anywhere in the current code.
-- The audio (Hell Beast, Demonic Phrase, Delirious, Gasp, In The Walls, UI Horror, etc.) looks like it came from a purchased sound pack. **License unchecked.** If it forbids redistribution, it must come out of the public repo.
-- `.wav` files are ~16 MB each (~130 MB of the 245 MB repo); converting to `.ogg` would shrink it a lot but needs filename edits in `music.lua`/`enemysounds.lua`/`main.lua`.
+## Known issues / not verified
+- **Nothing has been played on real hardware by the assistant.** Unverified on device: touch feel and hit-testing, gamepad analog
+  input, Steam Deck/Proton behavior, haptics/rumble, audio mix, phone performance and battery, icon/splash on a phone.
+- Crow size/dive dodgeability, trap damage feel, and enemy wind-up timing are untuned by play.
+- Easy difficulty was not re-run to death after crows/traps (see BALANCE.md addendum).
+- Sanity still has little gameplay cost for a player who stays in light (only FX and fumbled swings below 25 %).
+- Original-game quirks fixed in the port: gunshot sound name, carpet texture name; `enemies/manifest.lua` is unused.
+- Sound pack license (Hell Beast, Demonic Phrase, Delirious, ...) is **unchecked**; it is in the public repo and in the builds.
 
 ## Asset packs and what we decided
 Rule: **anything whose license forbids redistribution does not go in the public repo.** The owner argued a public repo isn't "distribution"; the assistant disagreed (raw files downloadable by anyone = redistribution) and kept them out. The owner then asked to delete those files, and they were deleted. Cleanest fix: **make the repo private** (recommended, undecided).
@@ -65,18 +61,14 @@ Rule: **anything whose license forbids redistribution does not go in the public 
 Status of the files: the restricted/unlicensed uploads were deleted from the session and scratch space. The owner still has the originals locally. The only trace in the repo is `godot/assets/office_pack/README.md` and the `.gitignore` lines for it. CC0 packs (textures, traps, KayKit, monsters) were extracted only in scratch space. Re-upload what's needed.
 
 ## Open decisions for the owner
-1. **Make the repo private?** Needed for CI builds to include the restricted packs (CI can't see git-ignored files). Otherwise store them in a private location and fetch with a secret.
-2. License of the existing sound pack in the repo.
-3. License/author of scarymobs.
-4. Final art direction: the owner's Blender-rendered sprites vs pixel-art packs vs rendering 3D packs to top-down sprites. They clash if mixed carelessly.
-5. Merge PR #2 (then create a `dev` branch and push to it to run the pipeline).
+1. Authorize a release: push/merge validated work to `dev` (publishes the rolling prerelease) and optionally fast-forward `main`.
+2. License of the sound pack; license/author of scarymobs; final art direction (Blender sprites vs pixel packs).
+3. Delete stale branches (12 local `worktree-agent-*`, PR #2/#1 branches) only when you say so.
+4. Steam: Steamworks app id, SteamPipe, release export presets, GodotSteam (see `godot/docs/STEAMDECK.md`).
 
-## Suggested next steps
-1. **Milestone 1: playable vertical slice** in `godot/`: player movement (keyboard, gamepad, touch joystick), generated room with wall collision and CC0 floor/wall textures, headlamp + shadows, one chasing enemy (placeholder art), basic HUD (health, flashlight battery). Add `CREDITS.md` crediting all packs used.
-2. Then port in order: map generation, weapons/bullets, items/orbs, progression, enemies + AI, menus, save slots, audio.
-3. Get the CI workflow green (fix Android paths), then iterate through dev builds on PC and phone.
-4. Later: Steam and Play release pipelines (signing keys in GitHub Secrets, SteamPipe, Play internal track). Play forbids downloading executable code, so no OTA in release builds.
+## Next actions (highest value first)
+1. Owner playtest of the latest build on phone + PC (+ Deck if available); triage feedback into fixes.
+2. Re-run Easy balance (`godot/tools/run_balance.py --diffs 1 --seeds 1-4`) after any enemy/loot change.
+3. Release signing for Google Play (keystore in GitHub Secrets) and Steam release export presets.
+4. Optional polish: trap minimap markers, enemy trap avoidance, sanity gameplay cost.
 
-## Housekeeping notes
-- A stray branch `claude/jolly-cori-g4l8rg` (identical to `main`, no changes) was pushed to Tartaria-RPG after a stop-hook warning. It can be deleted on GitHub. It is unrelated to this project.
-- Two helper scripts exist from earlier but aren't needed now: `Find-Backrooms.ps1` (searched drives for the lost game) and `GitZipPieces.ps1` (split large zips for git).
