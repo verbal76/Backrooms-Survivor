@@ -7,12 +7,17 @@ name: Dev build (OTA)
 #   - BackroomsSurvivor-dev.apk           fresh-install Android build (debug-signed)
 #   - patch.pck + manifest.json           what dev builds download at launch (OTA)
 # Dev builds check manifest.json on startup, verify patch.pck's SHA-256, load it, and run.
+#
+# SINGLE-SOURCE-OF-TRUTH POLICY (see docs/ENGINEERING_POLICY.md): every platform artifact in one release is built
+# from the SAME source SHA, pinned by the `guard` job and recorded in release_manifest.json. No platform step may be
+# skipped silently (no continue-on-error): if any platform fails, the whole release fails and nothing is published.
 
 on:
   push:
     branches: [dev]
     paths:
       - "godot/**"
+      - "tools/**"
       - ".github/workflows/dev-build.yml"
   workflow_dispatch:
 
@@ -28,11 +33,44 @@ defaults:
     shell: bash
 
 jobs:
+  guard:
+    # Decides the ONE approved source SHA for the whole release and refuses unsafe sources.
+    runs-on: ubuntu-22.04
+    outputs:
+      sha: ${{ steps.pin.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Pin the approved source revision
+        id: pin
+        run: |
+          # Releases may only come from the `dev` integration branch (never an arbitrary or abandoned branch).
+          if [ "${GITHUB_REF}" != "refs/heads/dev" ]; then
+            echo "::error::release builds must run on refs/heads/dev (got ${GITHUB_REF})"; exit 1
+          fi
+          SHA="$(git rev-parse HEAD)"
+          # The release line must contain everything already on main: an outdated dev can never publish.
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor origin/main "$SHA"; then
+            echo "::error::dev ($SHA) does not contain origin/main - refusing to publish an outdated line"; exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Approved source SHA: $SHA"
+      - name: Repository policy check
+        run: python3 tools/policy_check.py
+      - name: Branch inventory (read-only; unmerged work stays visible)
+        run: |
+          tools/branch_inventory.sh origin/dev | tee -a "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: guard
     runs-on: ubuntu-22.04
     container: barichello/godot-ci:4.3
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}   # every platform below builds from this exact SHA
 
       - name: Stamp build info
         working-directory: godot
@@ -42,7 +80,22 @@ jobs:
           sed -i "s/\"built_at\": \"[^\"]*\"/\"built_at\": \"$(date -u +%FT%TZ)\"/" build_info.json
           sed -i "s|\"manifest_url\": \"[^\"]*\"|\"manifest_url\": \"https://github.com/${{ github.repository }}/releases/download/dev/manifest.json\"|" build_info.json
           sed -i "s|\"release_page\": \"[^\"]*\"|\"release_page\": \"https://github.com/${{ github.repository }}/releases/tag/dev\"|" build_info.json
+          sed -i "s/\"full_sha\": \"[^\"]*\"/\"full_sha\": \"${{ needs.guard.outputs.sha }}\"/" build_info.json
+          sed -i "s|\"branch\": \"[^\"]*\"|\"branch\": \"${GITHUB_REF_NAME}\"|" build_info.json
+          sed -i "s|\"engine\": \"[^\"]*\"|\"engine\": \"$(godot --version | head -1)\"|" build_info.json
           cat build_info.json
+
+      - name: Shared smoke test (same code every platform ships)
+        working-directory: godot
+        run: |
+          godot --headless --import || true
+          set +e
+          godot --headless -s tools/smoke_test.gd 2>&1 | tee /tmp/smoke.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" != "0" ] || grep -Eq "SCRIPT ERROR|Parse Error|SMOKE TEST FAILURE" /tmp/smoke.log || ! grep -q "SMOKE TEST PASSED" /tmp/smoke.log; then
+            echo "::error::shared smoke test failed"; exit 1
+          fi
 
       - name: Install export templates
         run: |
@@ -64,9 +117,8 @@ jobs:
           (cd build/windows && zip -r ../out/BackroomsSurvivor-windows-dev.zip .)
 
       # Native Linux (Steam Deck / SteamOS / any x86_64 distro). Single self-contained executable (embedded pck).
-      # Best-effort like Android: if it fails, Windows + the patch pack still publish.
+      # Required: a failure here fails the whole release (no silent platform skips).
       - name: Export Linux (debug)
-        continue-on-error: true
         working-directory: godot
         run: |
           mkdir -p build/linux build/out
@@ -88,9 +140,8 @@ jobs:
             "${{ github.run_number }}" "${GITHUB_SHA::7}" "$SHA" "$SIZE" "$MIN" > build/out/manifest.json
           cat build/out/manifest.json
 
-      # Android is best-effort: if it fails, Windows + the patch pack still publish.
+      # Required: a failure here fails the whole release (no silent platform skips).
       - name: Export Android (debug)
-        continue-on-error: true
         working-directory: godot
         run: |
           # Godot 4.3 needs cmdline-tools, platform-tools, build-tools 34.0.0 and platform android-34.
@@ -130,14 +181,53 @@ jobs:
           test -f build/android/BackroomsSurvivor-dev.apk
           cp build/android/BackroomsSurvivor-dev.apk build/out/
 
+      - name: Write release manifest (build provenance)
+        working-directory: godot
+        run: |
+          SRC="${{ needs.guard.outputs.sha }}"
+          art() { # platform file config
+            F="build/out/$2"
+            [ -s "$F" ] || { echo "::error::required artifact missing: $2"; exit 1; }
+            printf '{"platform": "%s", "file": "%s", "config": "%s", "source_sha": "%s", "sha256": "%s", "size": %s}' \
+              "$1" "$2" "$3" "$SRC" "$(sha256sum "$F" | cut -d' ' -f1)" "$(stat -c%s "$F")"
+          }
+          {
+            printf '{"schema": 1,\n "app_version": "0.1.0",\n "build": %s,\n "built_at": "%s",\n' "${{ github.run_number }}" "$(date -u +%FT%TZ)"
+            printf ' "engine": "%s",\n "toolchain": {"godot_ci_image": "barichello/godot-ci:4.3", "java": "%s", "android_build_tools": "34.0.0", "android_platform": "android-34"},\n' \
+              "$(godot --version | head -1)" "$(java -version 2>&1 | grep -m1 -i 'version' | tr -d '"\\')"
+            printf ' "source": {"repo": "%s", "sha": "%s", "ref": "%s", "workflow_run": "%s"},\n' "${{ github.repository }}" "$SRC" "${GITHUB_REF}" "${{ github.run_id }}"
+            printf ' "artifacts": [\n  '
+            art windows BackroomsSurvivor-windows-dev.zip debug; printf ',\n  '
+            art linux BackroomsSurvivor-linux-dev.tar.gz debug; printf ',\n  '
+            art android BackroomsSurvivor-dev.apk debug-signed; printf ',\n  '
+            art patch patch.pck ota-patch
+            printf '\n ]}\n'
+          } > build/out/release_manifest.json
+          cat build/out/release_manifest.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: dev-release-files
           path: godot/build/out/*
           if-no-files-found: error
 
+  verify:
+    # Source-SHA parity gate: every platform artifact must be present, intact and built from the approved SHA.
+    needs: [guard, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dev-release-files
+          path: out
+      - name: Verify release manifest and artifacts
+        run: python3 tools/verify_release.py out --sha "${{ needs.guard.outputs.sha }}" --require windows,linux,android,patch
+
   publish:
-    needs: build
+    needs: [guard, build, verify]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
@@ -152,6 +242,6 @@ jobs:
           ls -la out
           gh release delete dev --repo "${{ github.repository }}" --cleanup-tag --yes || true
           gh release create dev out/* --repo "${{ github.repository }}" \
-            --target "${{ github.sha }}" --prerelease \
+            --target "${{ needs.guard.outputs.sha }}" --prerelease \
             --title "Dev build ${{ github.run_number }}" \
-            --notes "Rolling dev build ${{ github.run_number }} (${GITHUB_SHA::7}). Dev builds update themselves from manifest.json; use the zip / tar.gz / apk for a fresh install (Linux: tar xzf, then ./BackroomsSurvivor.x86_64)."
+            --notes "Rolling dev build ${{ github.run_number }} from source ${{ needs.guard.outputs.sha }} (all platforms identical source; see release_manifest.json). Dev builds update themselves from manifest.json; use the zip / tar.gz / apk for a fresh install (Linux: tar xzf, then ./BackroomsSurvivor.x86_64)."

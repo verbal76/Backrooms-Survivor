@@ -3,5 +3,10 @@
 	"sha": "local",
 	"built_at": "",
 	"manifest_url": "https://github.com/verbal76/Backrooms-Survivor/releases/download/dev/manifest.json",
-	"release_page": "https://github.com/verbal76/Backrooms-Survivor/releases/tag/dev"
+	"release_page": "https://github.com/verbal76/Backrooms-Survivor/releases/tag/dev",
+	"app_version": "0.1.0",
+	"full_sha": "",
+	"branch": "",
+	"engine": "",
+	"platform_note": "stamped by CI; see release_manifest.json for per-platform artifacts"
 }
