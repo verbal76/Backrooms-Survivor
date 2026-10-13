@@ -106,7 +106,9 @@ var _layer: CanvasLayer
 var _touch_ui: Control
 var _touch_aim_dir := Vector2.RIGHT
 var _gp_aim_dir := Vector2.RIGHT
-var _sprint_latched := false
+var _sprint_latched := false           # touch SPRINT toggle (tap on / tap off); gamepad and keyboard still hold
+const TOUCH_DEADZONE := 0.15            # of the move-stick radius; past it the stick gives a full-speed DIRECTION only
+const TOUCH_SPRINT_MIN_STAMINA := 5.0   # a sprint can only be switched on with at least this much stamina
 var _fire_latch := false              # an attack press that happened between two ticks
 var _refuse_cd := 0.0
 var refused_t := 0.0                   # > 0 while an attack is refused for lack of stamina
@@ -119,6 +121,11 @@ var _capture_cooldown := 0.0
 var _platform_mode := "keyboard"
 var _mouse_acc := 0.0                  # recent real mouse movement in px (hysteresis while a pad is in use)
 var _rumble_last := {}                 # kind -> msec of the last rumble
+
+
+## A new run starts with the touch SPRINT toggle off.
+func reset_run() -> void:
+	_sprint_latched = false
 
 
 func setup(g) -> void:
@@ -401,7 +408,7 @@ func controls_list(m := "") -> Array:
 	match m:
 		"touch":
 			out = [["Left side drag", "Move (floating stick)"], ["Right side drag", "Aim, auto-fires"],
-				["ATTACK (hold)", "Attack, auto-aims at nearest enemy"], ["SPRINT", "Toggle sprint (or push stick to edge)"],
+				["ATTACK (hold)", "Attack, auto-aims at nearest enemy"], ["SPRINT", "Tap to toggle sprint on / off"],
 				["BOMB", "Throw a bomb"], ["WPN", "Cycle weapon"], ["H2O / MED / EAT", "Drink / bandage / eat"],
 				["LAMP / BAT", "Headlamp / replace battery"], ["||", "Pause / menu"], ["Double-tap centre", "Pause / menu"]]
 		"gamepad":
@@ -888,9 +895,15 @@ func _update_touch(_playing: bool) -> void:
 	var attacking: bool = _btn_touch.values().has("attack")
 	if l.id >= 0:
 		var d: Vector2 = l.p - l.o
-		if d.length() > 5.0:
-			move = (d / maxr).limit_length(1.0)
-			sprint = d.length() > maxr * 0.8
+		# Direction only: past the dead zone the move vector is always unit length, so there is exactly ONE walking
+		# speed however far the thumb travels (diagonals are unit length too). Sprint never comes from the stick.
+		if d.length() > maxf(8.0, maxr * TOUCH_DEADZONE):
+			move = d.normalized()
+	# SPRINT is a toggle. Running out of stamina switches it off and it does NOT come back by itself: tap again.
+	var pl = game.player
+	if _sprint_latched and pl != null and pl.stamina <= 0.0:
+		_sprint_latched = false
+		_btn_flash["sprint"] = 0.18
 	if _sprint_latched and move.length() > 0.1:
 		sprint = true
 	var aimed := false
@@ -972,7 +985,12 @@ func _handle_touch(event: InputEventScreenTouch) -> void:
 		var b: Dictionary = lay.buttons[bi]
 		_btn_flash[b.action] = 0.18               # instant pressed feedback
 		if b.action == "sprint":
-			_sprint_latched = not _sprint_latched
+			if _sprint_latched:
+				_sprint_latched = false
+			elif touch_enabled("sprint"):
+				_sprint_latched = true
+			else:
+				refused_t = 0.35                 # no stamina: HUD flashes the bar, the button shows it is unavailable
 		else:
 			press(b.action)
 			_btn_touch[event.index] = b.action
@@ -1013,6 +1031,7 @@ func touch_enabled(action: String) -> bool:
 	match action:
 		"attack":
 			return game.ui == null or game.ui.attack_state() == ""
+		"sprint": return _sprint_latched or p.stamina >= TOUCH_SPRINT_MIN_STAMINA
 		"use_water": return p.almond_water > 0
 		"use_bandage": return p.bandages > 0 and p.hp < p.max_hp
 		"use_food": return p.food > 0
@@ -1053,21 +1072,35 @@ func _draw_touch() -> void:
 	var ui = game.ui
 	var f := op / 0.6
 	for b in lay.buttons:
-		var pressed: bool = _btn_flash.has(b.action) or (b.action == "sprint" and _sprint_latched)
+		var is_sprint: bool = b.action == "sprint"
+		var sprint_on: bool = is_sprint and _sprint_latched
+		var pressed: bool = _btn_flash.has(b.action) or sprint_on
 		var c: Color = b.color
 		var on := touch_enabled(b.action)
 		var dim := 1.0 if on else 0.35
 		if not on:
-			c = Color(0.55, 0.55, 0.55)
-		var r: float = b.r * (0.92 if pressed else 1.0)
-		_touch_ui.draw_circle(b.pos, r, Color(c, minf(1.0, (0.55 if pressed else 0.30) * f * dim)))
-		_touch_ui.draw_arc(b.pos, r, 0, TAU, 40, Color(c, minf(1.0, 0.95 * f * dim)), (3.4 if pressed else 2.4))
+			c = Color(0.9, 0.3, 0.25) if is_sprint else Color(0.55, 0.55, 0.55)   # SPRINT without stamina reads red
+		var r: float = b.r * (0.92 if pressed and not sprint_on else 1.0)
+		if sprint_on:      # ON: solid lit button with a halo, unmistakable at a glance
+			_touch_ui.draw_circle(b.pos, r * 1.28, Color(c, minf(1.0, 0.20 * f)))
+			_touch_ui.draw_circle(b.pos, r, Color(c, minf(1.0, 0.85 * f)))
+			_touch_ui.draw_arc(b.pos, r, 0, TAU, 40, Color(1, 1, 1, minf(1.0, 0.95 * f)), 4.0)
+		else:
+			_touch_ui.draw_circle(b.pos, r, Color(c, minf(1.0, (0.55 if pressed else 0.30) * f * dim)))
+			_touch_ui.draw_arc(b.pos, r, 0, TAU, 40, Color(c, minf(1.0, 0.95 * f * dim)), (3.4 if pressed else 2.4))
+		if is_sprint:      # state word under the button: ON / OFF / NO STAMINA
+			var sw := "ON" if sprint_on else ("OFF" if on else "NO STAMINA")
+			var sf := maxi(12, int(13 * k))
+			var sww := font.get_string_size(sw, HORIZONTAL_ALIGNMENT_LEFT, -1, sf).x
+			var scol := Color(1, 1, 1) if sprint_on else (Color(0.8, 0.85, 0.9) if on else Color(1, 0.45, 0.4))
+			_touch_ui.draw_string(font, b.pos + Vector2(-sww * 0.5, b.r + sf + 4.0 * k), sw, HORIZONTAL_ALIGNMENT_LEFT, -1, sf, Color(scol, minf(1.0, 0.95 * f)))
 		var fs := int(maxf(12.0, b.r * (0.36 if b.action == "attack" else 0.46)))
 		var tw := font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		if tw > r * 1.7:
 			fs = maxi(10, int(fs * r * 1.7 / tw))
 			tw = font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		_touch_ui.draw_string(font, b.pos + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, minf(1.0, 0.95 * f * dim)))
+		_touch_ui.draw_string(font, b.pos + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+			Color(0.02, 0.06, 0.12, 1.0) if sprint_on else Color(1, 1, 1, minf(1.0, 0.95 * f * dim)))
 		# inventory badge
 		var count := -1
 		if p:
@@ -1096,7 +1129,6 @@ func draw_stick(o: Vector2, maxr: float, knob_p: Vector2, col: Color, a: float, 
 	var f := a / 0.6
 	_touch_ui.draw_circle(o, maxr, Color(col, minf(1.0, 0.16 * f)))
 	_touch_ui.draw_arc(o, maxr, 0, TAU, 48, Color(col, minf(1.0, 0.7 * f)), 2.5)
-	_touch_ui.draw_arc(o, maxr * 0.8, 0, TAU, 40, Color(col, minf(1.0, 0.22 * f)), 1.5)   # sprint ring (move stick)
 	var knob: Vector2 = o + (knob_p - o).limit_length(maxr)
 	_touch_ui.draw_circle(knob, 34.0 * k, Color(col, minf(1.0, 0.34 * f)))
 	_touch_ui.draw_arc(knob, 34.0 * k, 0, TAU, 28, Color(col, minf(1.0, 0.8 * f)), 2.5)

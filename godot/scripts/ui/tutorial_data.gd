@@ -16,7 +16,7 @@ const PAGES := [
 		"[touch] - Hold the ATTACK button and you auto-aim at the nearest enemy (within 7 tiles); dragging the right stick aims by hand and fires.",
 		"[pad] - If you leave the right stick alone, aim assist locks onto the nearest visible enemy (Easy / Normal only).",
 		"- Sprint with {sprint}: 1.6x speed, but it costs 16 stamina per second, makes far more noise and drains hydration 1.5x faster. At 0 stamina you can only walk.",
-		"[touch] - Tap SPRINT to toggle it on and off, or push the move stick to its outer ring.",
+		"[touch] - Tap SPRINT to switch it on, tap again to switch it off. It switches itself off when stamina runs out; tap it again once you have recovered. The move stick only picks a direction: you always walk at the same speed.",
 		"- Stamina refills by itself (7 per second) whenever you are not sprinting. Attacking also costs stamina: a melee swing made without enough stamina still lands but at 60% damage and with slower recovery, while guns will not fire at all.",
 		"- Hold {status_hud} for the full status panel, {run_stats} for run stats and {tactical_map} for the tactical map. {pause} pauses.",
 		"- The map shows more on lower difficulties: Easy shows a wide area with enemies and items, Normal the local area with enemies, harder modes only the local area.",
@@ -114,7 +114,7 @@ const PAGES := [
 ## Context tips: id -> {title, text, color}. Shown once per character (remembered in the save).
 const TIPS := {
 	"welcome": {"title": "WELCOME TO THE BACKROOMS", "color": Color(0.9, 0.8, 0.2),
-		"text": "Move with {move}, aim with {aim}. Hold {attack} to attack. Hold {sprint} to sprint (uses stamina). More tips will pop up as things come up - they are shown once."},
+		"text": "Move with {move}, aim with {aim}. Hold {attack} to attack. Sprint with {sprint} (uses stamina). More tips will pop up as things come up - they are shown once."},
 	"stats": {"title": "YOUR STATS", "color": Color(0.9, 0.8, 0.2),
 		"text": "Top left: HP, stamina, sanity (purple), hydration (blue) and XP. Sanity falls in the dark, hydration falls over time. Keep both up - hold {status_hud} for details."},
 	"enemy": {"title": "SOMETHING IS HUNTING YOU", "color": Color(1, 0.4, 0.3),

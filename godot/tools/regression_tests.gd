@@ -21,6 +21,7 @@ func _init() -> void:
 	t_tutorial_matches_code()
 	t_controller_prompts_are_pure()
 	t_glyph_mapping()
+	t_touch_move_and_sprint()
 	await t_enemy_attack_cycle()
 	await t_no_flee_or_hover()
 	await t_tired_swing_still_hits()
@@ -318,3 +319,166 @@ func t_glyph_mapping() -> void:
 	Glyphs.enabled = prev_enabled
 	Glyphs.family = prev_family
 	_ok("glyph family mapping, token segmentation and fallback", problems.is_empty(), "; ".join(problems))
+
+
+# ---- touch movement + sprint toggle (owner playtest, Build 13) -----------------------------------------------
+
+class OpenMap extends WorldMap:
+	func is_solid(_x: float, _y: float) -> bool:
+		return false
+
+
+func _tap(index: int, pos: Vector2, pressed := true, canceled := false) -> void:
+	var ev := InputEventScreenTouch.new()
+	ev.index = index
+	ev.position = pos
+	ev.pressed = pressed
+	ev.canceled = canceled
+	g.input._handle_touch(ev)
+
+
+func _stick_to(dist: float, dir := Vector2.RIGHT) -> void:
+	var o: Vector2 = g.input.touch_layout().move_c
+	g.input._sticks.left = {"id": 0, "o": o, "p": o + dir.normalized() * dist}
+
+
+func _touch_frame(dt := 1.0 / 60.0) -> void:
+	var inp = g.input
+	inp.move = Vector2.ZERO
+	inp.sprint = false
+	inp._update_touch(true)
+	g.player.step(dt, inp.move, inp.sprint, g.player.tile_pos * g.TILE)
+
+
+func _settle(frames := 150) -> float:
+	for i in frames:
+		_touch_frame()
+	return g.player.vel.length()
+
+
+func t_touch_move_and_sprint() -> void:
+	var inp = g.input
+	var p = g.player
+	var saved_map = p.map
+	var saved := {"pos": p.tile_pos, "stamina": p.stamina, "vel": p.vel}
+	p.map = OpenMap.new()
+	_keep_playing()
+	inp.reset_run()
+	var lay: Dictionary = inp.touch_layout()
+	var maxr: float = lay.stick_r
+	var dz: float = maxf(8.0, maxr * inp.TOUCH_DEADZONE)
+	var walk: float = p.base_speed * p.speed_mult
+	var bad: Array[String] = []
+
+	# 1. ONE walking speed at every valid stick distance, in every direction; nothing below the dead zone
+	var speeds := {}
+	for dist in [dz + 2.0, maxr * 0.5, maxr, maxr * 1.7]:
+		p.vel = Vector2.ZERO
+		_stick_to(dist)
+		speeds[dist] = _settle()
+	for dist in speeds:
+		if absf(speeds[dist] - walk) > 0.01:
+			bad.append("dist %.0f -> %.3f (want %.3f)" % [dist, speeds[dist], walk])
+	p.vel = Vector2.ZERO
+	_stick_to(maxr, Vector2(1, 1))
+	var diag := _settle()
+	if absf(diag - walk) > 0.01:
+		bad.append("diagonal %.3f (want %.3f)" % [diag, walk])
+	p.vel = Vector2.ZERO
+	_stick_to(dz - 2.0)
+	if _settle() > 0.01:
+		bad.append("moved inside the dead zone")
+	_ok("touch stick: one walking speed at every distance and diagonal, none inside the dead zone", bad.is_empty(), "; ".join(bad))
+	bad.clear()
+
+	# 2. pushing the stick to the edge no longer sprints
+	p.vel = Vector2.ZERO
+	_stick_to(maxr * 1.7)
+	_settle(20)
+	_ok("edge of the stick does not sprint", not p.sprinting and not inp.sprint)
+
+	# 3. SPRINT button toggles on, uses the existing multiplier once, toggles off
+	var sb: Vector2 = Vector2.ZERO
+	for b in lay.buttons:
+		if b.action == "sprint":
+			sb = b.pos
+	p.stamina = 100.0
+	p.vel = Vector2.ZERO
+	_tap(5, sb)
+	_tap(5, sb, false)
+	_ok("first tap switches sprint on", inp._sprint_latched)
+	var sp := _settle()
+	_ok("sprint uses the existing multiplier and does not stack", absf(sp - walk * p.sprint_mult) < 0.02 and p.sprinting, "%.3f vs %.3f" % [sp, walk * p.sprint_mult])
+	_tap(5, sb)
+	_tap(5, sb, false)
+	_touch_frame()
+	_ok("second tap switches sprint off immediately", not inp._sprint_latched and not p.sprinting)
+	_ok("walking speed returns after sprint off", absf(_settle() - walk) < 0.02)
+
+	# 4. toggle on while standing still: no drain, stays lit, takes effect when moving
+	_release_stick_and_stop()
+	p.stamina = 100.0
+	_tap(5, sb)
+	_tap(5, sb, false)
+	for i in 60:
+		_touch_frame()
+	_ok("sprint ON while stationary costs no stamina and stays on", inp._sprint_latched and not p.sprinting and p.stamina >= 99.9, "stamina %.2f" % p.stamina)
+	_stick_to(maxr)
+	_touch_frame()
+	_ok("moving then sprints", p.sprinting)
+
+	# 5. drain at the existing rate; exhaustion switches it off and it stays off while stamina recovers
+	p.stamina = 100.0
+	for i in 60:
+		_touch_frame()
+	var spent: float = 100.0 - p.stamina
+	var want: float = p.S.sprint_cost * p.sprint_cost_mult
+	_ok("sprint drains stamina at the existing rate", absf(spent - want) < 0.6, "spent %.2f/s want %.2f" % [spent, want])
+	p.stamina = 3.0
+	var frames_on := 0
+	while inp._sprint_latched and frames_on < 300:
+		_touch_frame()
+		frames_on += 1
+	_ok("exhausting stamina switches the sprint toggle off", not inp._sprint_latched and not p.sprinting and p.stamina < 0.5 and frames_on < 60,
+		"stamina %.2f latched %s after %d frames" % [p.stamina, inp._sprint_latched, frames_on])
+	for i in 30:
+		_touch_frame()
+	_ok("walking continues at normal speed after exhaustion", absf(p.vel.length() - walk) < 0.02)
+	for i in 600:
+		_touch_frame()
+	_ok("sprint does not resume by itself when stamina recovers", p.stamina > 20.0 and not inp._sprint_latched and not p.sprinting, "stamina %.1f" % p.stamina)
+	p.stamina = 0.0
+	_tap(5, sb)
+	_tap(5, sb, false)
+	_ok("sprint cannot be switched on without stamina", not inp._sprint_latched and not inp.touch_enabled("sprint"))
+	p.stamina = 100.0
+	_tap(5, sb)
+	_tap(5, sb, false)
+	_ok("sprint can be switched on again once recovered", inp._sprint_latched)
+
+	# 6. another finger on the stick: tapping SPRINT must not disturb it; release and cancel stop movement
+	inp._sprint_latched = false
+	_stick_to(maxr * 0.6)
+	_tap(7, sb)
+	_tap(7, sb, false)
+	_touch_frame()
+	_ok("sprint tap while another finger steers keeps the stick and toggles", inp._sprint_latched and inp._sticks.left.id == 0 and inp.move.length() > 0.99)
+	_tap(0, Vector2.ZERO, false)
+	_touch_frame()
+	_ok("finger release stops movement input", inp._sticks.left.id == -1 and inp.move == Vector2.ZERO)
+	_stick_to(maxr)
+	_tap(0, Vector2.ZERO, false, true)
+	_touch_frame()
+	_ok("touch cancel stops movement input", inp._sticks.left.id == -1 and inp.move == Vector2.ZERO)
+	inp.reset_run()
+	_ok("a new run starts with sprint off", not inp._sprint_latched)
+
+	p.map = saved_map
+	p.tile_pos = saved.pos
+	p.stamina = saved.stamina
+	p.vel = saved.vel
+
+
+func _release_stick_and_stop() -> void:
+	g.input._sticks.left.id = -1
+	g.player.vel = Vector2.ZERO
