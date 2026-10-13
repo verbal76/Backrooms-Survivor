@@ -303,31 +303,48 @@ func _draw() -> void:
 	if mode == "touch":
 		ins = game.input.safe_insets()
 	var cw := minf(640.0, w - 40.0 - ins.x - ins.z)
+	var cx_center := w * 0.5
 	var pad := 14.0
 	var fs := 17
+	var phone: bool = ui.is_phone_ui() and mode == "touch"
+	if phone:
+		# Phone: sit in the free strip between the two thumb clusters so the card never covers a stick or button.
+		var lay: Dictionary = game.input.touch_layout()
+		var sprint_pos := Vector2.ZERO
+		var sprint_r := 0.0
+		for b in lay.buttons:
+			if b.action == "sprint":
+				sprint_pos = b.pos
+				sprint_r = b.r
+		var lh: bool = game.input.opts().touch_left_handed
+		var free_l: float = (lay.aim_c.x + lay.stick_r + 10.0) if lh else (sprint_pos.x + sprint_r + 10.0)
+		var free_r: float = (sprint_pos.x - sprint_r - 10.0) if lh else (lay.aim_c.x - lay.stick_r - 10.0)
+		cw = clampf((free_r - free_l) / s, 200.0, 640.0)
+		cx_center = (free_l + free_r) * 0.5 / s
+		fs = 18 if cw >= 300.0 else 16
 	var tw := cw - pad * 2.0
 	var body := UITheme.body_font()
 	var th := body.get_multiline_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, tw, fs).y
-	var ch := 40.0 + th + 38.0
+	var ch := 40.0 + th + (44.0 if phone else 38.0)
 	var bottom := h - 18.0 - ins.w
-	var x := (w - cw) * 0.5
+	var x := cx_center - cw * 0.5
 	var y := bottom - ch + (1.0 - _alpha) * 16.0
 	card_rect = Rect2(x, y, cw, ch)
 	var a := _alpha
 	UITheme.panel(self, card_rect.grow(3), Color(0, 0, 0, 0.35 * a), Color(0, 0, 0, 0), 10)
 	UITheme.panel(self, card_rect, Color(0.03, 0.026, 0.014, 0.94 * a), Color(_col.r, _col.g, _col.b, 0.8 * a), 8, 2)
 	draw_rect(Rect2(x + 2, y + 2, 5, ch - 4), Color(_col.r, _col.g, _col.b, 0.9 * a))
-	UITheme.head(self, _title, x + pad + 6, y + 8, 22, Color(_col.r, _col.g, _col.b, a))
+	UITheme.head(self, _title, x + pad + 6, y + 8, 24 if phone else 22, Color(_col.r, _col.g, _col.b, a))
 	UITheme.text(self, "TIP", x, y + 12, 12, Color(0.6, 0.6, 0.6, 0.8 * a), HORIZONTAL_ALIGNMENT_RIGHT, cw - pad)
 	UITheme.wrapped(self, _text, x + pad + 6, y + 38, tw - 6, fs, Color(0.88, 0.88, 0.88, a), HORIZONTAL_ALIGNMENT_LEFT)
 	# footer
-	var fy := y + ch - 26.0
+	var fy := y + ch - (30.0 if phone else 26.0)
 	var hint: String = game.input.hint("ENTER: got it    BACKSPACE: tips off", "[View]: got it    hold [View]: tips off", "TAP: got it")
-	UITheme.text(self, hint, x + pad + 6, fy, 13, Color(0.7, 0.7, 0.62, a))
+	UITheme.text(self, hint, x + pad + 6, fy, 15 if phone else 13, Color(0.8, 0.8, 0.72, a) if phone else Color(0.7, 0.7, 0.62, a))
 	if mode == "touch":
-		skip_rect = Rect2(x + cw - 120.0, fy - 6.0, 112.0, 26.0)
+		skip_rect = Rect2(x + cw - 128.0, fy - 6.0, 120.0, 30.0 if phone else 26.0)
 		UITheme.panel(self, skip_rect, Color(0.12, 0.1, 0.05, 0.9 * a), Color(0.7, 0.3, 0.2, 0.6 * a), 5, 1)
-		UITheme.text(self, "TIPS OFF", skip_rect.position.x, skip_rect.position.y + 5, 13, Color(1, 0.6, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, skip_rect.size.x)
+		UITheme.text(self, "TIPS OFF", skip_rect.position.x, skip_rect.position.y + 5, 15 if phone else 13, Color(1, 0.6, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, skip_rect.size.x)
 	else:
 		if mode == "keyboard":
 			UITheme.text(self, "[click] dismiss", x + cw - 140.0, fy, 13, Color(0.6, 0.6, 0.55, a), HORIZONTAL_ALIGNMENT_RIGHT, 132.0)

@@ -20,3 +20,16 @@ same source SHA (`release_manifest.json`).
 Rules: no platform-named code directories or branches; no `if platform:` gameplay or balance differences; any new
 difference must be added to this table in the same change. Legacy LÖVE2D files in the repo root are the reference
 implementation of the same game and are not a platform target.
+
+## Android phone UI scale (owner playtest of Build 13)
+On a real mobile device the whole UI is drawn about **2x** larger (`ui.phone_boost()`: 2.0 on phones, easing to 1.25 on tablets by
+physical screen size; desktop, Windows, Linux and Steam Deck keep boost 1.0, enforced by a regression test). It multiplies Options >
+UI Scale and is capped so each page still fits. What changed on phones only:
+- **HUD:** stats panel top-left, info panel top-right, minimap in the strip between them (left-handed play mirrors the panels); the
+  minimap is bigger with larger markers; counters and captions on the touch buttons ~40% larger. The touch sticks keep their size.
+- **Level-up:** larger cards, titles and descriptions, a lighter unselected card, both cards always fully visible.
+- **Tip cards:** larger text, placed between the two thumb clusters so they never cover a stick or button.
+- **Pause, Options, How To Play, Death, Title:** compact 2x layouts (tighter header, scrolling lists, drag-to-scroll).
+- Not changed (still ~1.4x, screens too dense for a 360 px tall canvas): Upgrades shop, character select, name entry.
+Evidence: `docs/android_ui_before_after/` (same seed and game state, 1280x580). Tests: `t_phone_ui`, `t_phone_menus` in
+`godot/tools/regression_tests.gd` check the scale, on-screen bounds and overlap with every touch control at five phone sizes.

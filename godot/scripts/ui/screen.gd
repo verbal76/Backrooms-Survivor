@@ -11,7 +11,7 @@ var dt := 0.016
 var pointer := Vector2(-1000, -1000)
 var _pointer_down := false
 var ui_scale := 1.0             # effective UI scale of this page (Options > UI Scale, capped so the page still fits)
-var design_min := Vector2(800, 520)   # smallest canvas size (px) the page lays out in without clipping
+var design_min := Vector2(800, 520)   # smallest canvas size (px) the page lays out in without clipping (phone-ready pages set 640 x 340)
 var _lay_key := Vector3.ZERO
 
 
@@ -24,7 +24,7 @@ func _init() -> void:
 ## Fit the page to the canvas at the player's UI scale. The page lays out in a canvas of (vp / scale) px and is
 ## drawn magnified by `scale`, so every _draw()/handle_input() keeps using `size` untouched.
 func apply_layout(user_scale: float, vp: Vector2) -> void:
-	var s := clampf(minf(user_scale, minf(vp.x / design_min.x, vp.y / design_min.y)), 0.5, 1.6)
+	var s := clampf(minf(user_scale, minf(vp.x / design_min.x, vp.y / design_min.y)), 0.5, 2.2)
 	if absf(s - 1.0) < 0.001:
 		s = 1.0
 	var key := Vector3(s, vp.x, vp.y)

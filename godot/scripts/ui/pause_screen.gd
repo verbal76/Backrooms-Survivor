@@ -5,6 +5,7 @@ var menu := MenuList.new()
 
 
 func _on_bound() -> void:
+	design_min = Vector2(640, 340)         # phone landscape at 2x: the page lays out in ~800 x 360
 	var o: GameOptions = ui.options
 	menu.row_h = 34.0
 	menu.add_slider("Music", func(): return o.music_volume, func(v): o.music_volume = v)
@@ -86,16 +87,19 @@ func _draw() -> void:
 	var a := clampf(age / 0.2, 0.0, 1.0)
 	fill(Color(0, 0, 0, 0.86 * a))
 	var g = ui.game
-	menu.max_rows = menu.rows_for(h - 80.0 - 70.0)
-	var total := 80.0 + menu.total_height()
-	var top := floorf((h - total) * 0.5)
-	UITheme.head(self, "PAUSED", 0, top - (1.0 - a) * 16, 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var compact := h < 460.0
+	menu.compact = compact
+	var head_h := 66.0 if compact else 80.0
+	menu.max_rows = menu.rows_for(h - head_h - (34.0 if compact else 70.0))
+	var total := head_h + menu.total_height()
+	var top := 6.0 if compact else floorf((h - total) * 0.5)
+	UITheme.head(self, "PAUSED", 0, top - (1.0 - a) * 16, 30 if compact else 40, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	var line := "Day %d  |  %s  |  Kills %d  |  Streak %d  |  %s" % [g.day, UITheme.fmt_time(g.run_time), g.kills, g.player.current_streak,
 		UITheme.DIFF_NAMES[ui.difficulty - 1]]
-	UITheme.text(self, line, 0, top + 48, 16, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
-	menu.draw(self, w * 0.5, top + 80.0, dt, ui.clock)
+	UITheme.text(self, line, 0, top + (36 if compact else 48), 16, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	menu.draw(self, w * 0.5, top + head_h, dt, ui.clock)
 	UITheme.text(self, ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ENTER confirm    ESC resume",
-		"D-Pad select    Left/Right adjust    A confirm    Menu / B resume", "TAP to select"), 0, h - 26, 13,
-		UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+		"D-Pad select    Left/Right adjust    A confirm    Menu / B resume", "TAP to select    drag to scroll" if menu.max_rows < menu.items.size() else "TAP to select"),
+		0, h - (22 if compact else 26), 14 if compact else 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.12), 3.0)
 	UITheme.vignette(self, size, 0.5)

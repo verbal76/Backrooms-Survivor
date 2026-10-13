@@ -1054,6 +1054,7 @@ func _draw_touch() -> void:
 	var maxr: float = lay.stick_r
 	var op := opts().touch_opacity
 	var font := UITheme.title_font()
+	var tt := 1.4 if (game.ui != null and game.ui.is_phone_ui()) else 1.0     # phone: captions and counters ~40% larger (the sticks are not)
 	# "left" stick record = move stick, "right" = aim stick (regardless of which side they sit on)
 	var rest := {"left": lay.move_c, "right": lay.aim_c}
 	var names := {"left": "MOVE", "right": "AIM"}
@@ -1065,7 +1066,7 @@ func _draw_touch() -> void:
 		draw_stick(o, maxr, kp, col, op if s.id >= 0 else op * 0.8, k)
 		if s.id < 0:
 			var gl: String = names[key]
-			var gfs := maxi(12, int(13 * k))
+			var gfs := maxi(14, int(13 * k * tt))
 			var gw := font.get_string_size(gl, HORIZONTAL_ALIGNMENT_LEFT, -1, gfs).x
 			_touch_ui.draw_string(font, o + Vector2(-gw * 0.5, maxr + 18 * k), gl, HORIZONTAL_ALIGNMENT_LEFT, -1, gfs, Color(1, 1, 1, 0.8 * op))
 	var p = game.player
@@ -1090,11 +1091,11 @@ func _draw_touch() -> void:
 			_touch_ui.draw_arc(b.pos, r, 0, TAU, 40, Color(c, minf(1.0, 0.95 * f * dim)), (3.4 if pressed else 2.4))
 		if is_sprint:      # state word under the button: ON / OFF / NO STAMINA
 			var sw := "ON" if sprint_on else ("OFF" if on else "NO STAMINA")
-			var sf := maxi(12, int(13 * k))
+			var sf := maxi(13, int(13 * k * tt))
 			var sww := font.get_string_size(sw, HORIZONTAL_ALIGNMENT_LEFT, -1, sf).x
 			var scol := Color(1, 1, 1) if sprint_on else (Color(0.8, 0.85, 0.9) if on else Color(1, 0.45, 0.4))
 			_touch_ui.draw_string(font, b.pos + Vector2(-sww * 0.5, b.r + sf + 4.0 * k), sw, HORIZONTAL_ALIGNMENT_LEFT, -1, sf, Color(scol, minf(1.0, 0.95 * f)))
-		var fs := int(maxf(12.0, b.r * (0.36 if b.action == "attack" else 0.46)))
+		var fs := int(maxf(12.0, b.r * (0.36 if b.action == "attack" else 0.46) * (1.2 if tt > 1.0 and b.action != "attack" else 1.0)))
 		var tw := font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		if tw > r * 1.7:
 			fs = maxi(10, int(fs * r * 1.7 / tw))
@@ -1116,9 +1117,9 @@ func _draw_touch() -> void:
 		if count >= 0:
 			var bp: Vector2 = b.pos + Vector2(b.r * 0.72, -b.r * 0.72)
 			var cs := str(count)
-			var bf := maxi(12, int(15 * k))
+			var bf := maxi(12, int(15 * k * tt))
 			var cw := ThemeDB.fallback_font.get_string_size(cs, HORIZONTAL_ALIGNMENT_LEFT, -1, bf).x
-			var br := maxf(11.0 * k, cw * 0.5 + 5.0)
+			var br := maxf(11.0 * k * tt, cw * 0.5 + 5.0)
 			_touch_ui.draw_circle(bp, br, Color(0, 0, 0, 0.8))
 			_touch_ui.draw_arc(bp, br, 0, TAU, 20, Color(c, 0.8), 1.5)
 			_touch_ui.draw_string(ThemeDB.fallback_font, bp + Vector2(-cw * 0.5, bf * 0.36), cs, HORIZONTAL_ALIGNMENT_LEFT, -1,

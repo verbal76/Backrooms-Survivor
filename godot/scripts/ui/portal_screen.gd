@@ -167,3 +167,7 @@ func _draw_victory() -> void:
 	var blink := 0.5 + 0.5 * sin(t * 3.0)
 	UITheme.text(self, "[ %s ]" % ui.input.hint("Press Enter to continue", "Press A to continue", "Tap to continue"), 0, y, 16, Color(0.7, 0.8, 0.7, (0.4 + 0.6 * blink) * ta), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.5)
+
+
+func _on_bound() -> void:
+	design_min = Vector2(640, 340)        # phone landscape at 2x: verified by screenshot

@@ -22,6 +22,8 @@ func _init() -> void:
 	t_controller_prompts_are_pure()
 	t_glyph_mapping()
 	t_touch_move_and_sprint()
+	await t_phone_ui()
+	await t_phone_menus()
 	await t_enemy_attack_cycle()
 	await t_no_flee_or_hover()
 	await t_tired_swing_still_hits()
@@ -482,3 +484,197 @@ func t_touch_move_and_sprint() -> void:
 func _release_stick_and_stop() -> void:
 	g.input._sticks.left.id = -1
 	g.player.vel = Vector2.ZERO
+
+
+# ---- Android phone UI: ~2x readable, nothing overlapping or clipped (owner screenshots, Build 13) -------------------
+
+const PHONE_VIEWS := [Vector2i(1280, 580), Vector2i(1920, 886), Vector2i(2400, 1080), Vector2i(2160, 1080), Vector2i(1920, 1080)]
+
+
+func _rect_hits_circle(r: Rect2, c: Vector2, rad: float) -> bool:
+	var nx := clampf(c.x, r.position.x, r.end.x)
+	var ny := clampf(c.y, r.position.y, r.end.y)
+	return Vector2(nx, ny).distance_to(c) < rad
+
+
+## Rects (viewport px) of every touch control: buttons and the two stick areas.
+func _touch_circles(lay: Dictionary) -> Array:
+	var out: Array = []
+	for b in lay.buttons:
+		out.append([b.action, b.pos, b.r])
+	out.append(["move stick", lay.move_c, lay.stick_r])
+	out.append(["aim stick", lay.aim_c, lay.stick_r])
+	return out
+
+
+func t_phone_ui() -> void:
+	var ui = g.ui
+	var saved_scale: float = ui.options.ui_scale
+	var saved_lh: bool = ui.options.touch_left_handed
+	var saved_mode: int = ui.options.control_mode
+	var saved_win: Vector2i = root.size
+	ui.options.ui_scale = 1.0
+	ui.options.control_mode = 3
+	var bad: Array[String] = []
+	var Hud = load("res://scripts/ui/hud.gd")
+
+	# desktop is untouched: no phone flag -> the old scale formula
+	ui.debug_phone = false
+	root.size = Vector2i(1280, 800)
+	await process_frame
+	var vp0: Vector2 = ui.get_viewport().get_visible_rect().size
+	_ok("desktop / Steam Deck UI scale is unchanged", absf(ui.hud_scale() - clampf(minf(1.0, vp0.y / 460.0), 0.8, 1.6)) < 0.001 and ui.phone_boost() == 1.0,
+		"hud %.3f boost %.2f" % [ui.hud_scale(), ui.phone_boost()])
+
+	ui.debug_phone = true
+	for lh in [false, true]:
+		ui.options.touch_left_handed = lh
+		for view in PHONE_VIEWS:
+			root.size = view
+			await process_frame
+			await process_frame
+			var vp: Vector2 = ui.get_viewport().get_visible_rect().size
+			var s: float = ui.hud_scale()
+			var tag := "%dx%d%s" % [view.x, view.y, " lefty" if lh else ""]
+			if s < 1.8 or s > 2.2:
+				bad.append("%s hud scale %.2f" % [tag, s])
+			var lay: Dictionary = g.input.touch_layout()
+			var px := -1.0
+			var pr := 0.0
+			for b in lay.buttons:
+				if b.action == "pause":
+					px = b.pos.x / s
+					pr = b.r / s
+			var rects: Dictionary = Hud.phone_rects(vp.x / s, lh, px, pr)
+			rects.erase("mini_size")
+			if (rects.mini as Rect2).size.x * s < 150.0:
+				bad.append("%s minimap too small (%.0f px)" % [tag, (rects.mini as Rect2).size.x * s])
+			for name in rects:
+				var r: Rect2 = rects[name]
+				var rp := Rect2(r.position * s, r.size * s)
+				if rp.position.x < -0.5 or rp.position.y < -0.5 or rp.end.x > vp.x + 0.5 or rp.end.y > vp.y + 0.5:
+					bad.append("%s HUD %s outside the screen" % [tag, name])
+				for c in _touch_circles(lay):
+					if _rect_hits_circle(rp, c[1], c[2]):
+						bad.append("%s HUD %s overlaps %s" % [tag, name, c[0]])
+			var names := rects.keys()
+			for i in names.size():
+				for j in range(i + 1, names.size()):
+					if (rects[names[i]] as Rect2).intersects(rects[names[j]]):
+						bad.append("%s HUD %s overlaps %s" % [tag, names[i], names[j]])
+	_ok("phone HUD is ~2x, inside the screen and clear of every touch control (5 sizes, both hands)", bad.is_empty(), "; ".join(bad.slice(0, 6)))
+	ui.options.touch_left_handed = saved_lh
+
+	# level-up page: both cards fully visible, not overlapping, big enough
+	bad.clear()
+	for view in PHONE_VIEWS:
+		root.size = view
+		await process_frame
+		ui.perk_choices = Progression.roll_perk_choice([])
+		g.set_state("perk")
+		await _frames_raw(40)
+		var pg = ui.screens["perk"]
+		var sz: Vector2 = pg.size
+		var tag2 := "%dx%d" % [view.x, view.y]
+		if pg.ui_scale < 1.8:
+			bad.append("%s page scale %.2f" % [tag2, pg.ui_scale])
+		for i in 2:
+			var r: Rect2 = pg._rects[i]
+			if r.position.x < 0.0 or r.position.y < 0.0 or r.end.x > sz.x or r.end.y > sz.y - 20.0:
+				bad.append("%s card %d outside (%s in %s)" % [tag2, i, r, sz])
+			if r.size.x * pg.ui_scale < 1.7 * 280.0 or r.size.y * pg.ui_scale < 1.4 * 150.0:
+				bad.append("%s card %d too small" % [tag2, i])
+		if (pg._rects[0] as Rect2).intersects(pg._rects[1]):
+			bad.append("%s cards overlap" % tag2)
+		g.set_state("playing")
+		await _frames_raw(5)
+	_ok("level-up cards: ~2x bigger, both fully visible, no overlap (5 sizes)", bad.is_empty(), "; ".join(bad.slice(0, 5)))
+
+	# tutorial tip card: inside the screen, clear of both thumb clusters
+	bad.clear()
+	ui.options.tips_enabled = true
+	for view in PHONE_VIEWS:
+		root.size = view
+		await process_frame
+		ui.tips._show("stamina_low")
+		ui.tips._alpha = 1.0
+		await _frames_raw(6)
+		var s3: float = ui.hud_scale()
+		var cr: Rect2 = ui.tips.card_rect
+		var crp := Rect2(cr.position * s3, cr.size * s3)
+		var vp3: Vector2 = ui.get_viewport().get_visible_rect().size
+		var tag3 := "%dx%d" % [view.x, view.y]
+		if crp.position.x < 0.0 or crp.position.y < 0.0 or crp.end.x > vp3.x or crp.end.y > vp3.y:
+			bad.append("%s tip outside %s" % [tag3, crp])
+		for c in _touch_circles(g.input.touch_layout()):
+			if _rect_hits_circle(crp, c[1], c[2]):
+				bad.append("%s tip overlaps %s" % [tag3, c[0]])
+		ui.tips.dismiss()
+	_ok("tip card sits between the thumb clusters, inside the screen (5 sizes)", bad.is_empty(), "; ".join(bad.slice(0, 5)))
+
+	ui.debug_phone = false
+	ui.options.ui_scale = saved_scale
+	ui.options.control_mode = saved_mode
+	root.size = saved_win
+	await process_frame
+
+
+func _frames_raw(n: int) -> void:
+	for i in n:
+		await process_frame
+
+
+## Pause / options / how-to pages on a phone: magnified ~2x, every visible menu row and button inside the page.
+func t_phone_menus() -> void:
+	var ui = g.ui
+	var saved_scale: float = ui.options.ui_scale
+	var saved_win: Vector2i = root.size
+	ui.options.ui_scale = 1.0
+	ui.debug_phone = true
+	var bad: Array[String] = []
+	for view in PHONE_VIEWS:
+		root.size = view
+		await process_frame
+		var tag := "%dx%d" % [view.x, view.y]
+		g.set_state("paused")
+		await _frames_raw(40)
+		var pg = ui.screens["pause"]
+		if pg.ui_scale < 1.8:
+			bad.append("%s pause scale %.2f" % [tag, pg.ui_scale])
+		for r in pg.menu.rects:
+			if r.position.x < -5000.0:
+				continue                          # row scrolled out of the window
+			if r.position.y < 0.0 or r.end.y > pg.size.y - 18.0 or r.position.x < 0.0 or r.end.x > pg.size.x:
+				bad.append("%s pause row %s outside %s" % [tag, r, pg.size])
+		ui.show_screen("options", "pause")
+		var op = ui.screens["options"]
+		for sec in ["main", "display", "gamepad", "touch"]:
+			op._open_section(sec)
+			await _frames_raw(40)
+			var m: MenuList = op._menu_for(sec)
+			if op.ui_scale < 1.8:
+				bad.append("%s options scale %.2f" % [tag, op.ui_scale])
+			var vis := 0
+			for r in m.rects:
+				if r.position.x < -5000.0:
+					continue
+				vis += 1
+				if r.position.y < 0.0 or r.end.y > op.size.y - 14.0 or r.end.x > op.size.x:
+					bad.append("%s options/%s row %s outside %s" % [tag, sec, r, op.size])
+			if vis < 3:
+				bad.append("%s options/%s only %d rows visible" % [tag, sec, vis])
+		ui.show_screen("howto", "pause")
+		await _frames_raw(40)
+		var hp = ui.screens["howto"]
+		if hp.ui_scale < 1.8:
+			bad.append("%s how-to scale %.2f" % [tag, hp.ui_scale])
+		for rr in [hp._back_rect, hp._prev_rect, hp._next_rect]:
+			if (rr as Rect2).end.y > hp.size.y or (rr as Rect2).position.x < 0.0 or (rr as Rect2).end.x > hp.size.x:
+				bad.append("%s how-to button %s outside %s" % [tag, rr, hp.size])
+		g.set_state("playing")
+		await _frames_raw(5)
+	_ok("pause, options and how-to pages: ~2x, rows and buttons inside the screen (5 sizes)", bad.is_empty(), "; ".join(bad.slice(0, 5)))
+	ui.debug_phone = false
+	ui.options.ui_scale = saved_scale
+	root.size = saved_win
+	await process_frame

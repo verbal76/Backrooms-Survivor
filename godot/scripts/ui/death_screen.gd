@@ -11,6 +11,7 @@ func _init() -> void:
 
 
 func _on_bound() -> void:
+	design_min = Vector2(640, 340)        # phone landscape at 2x: verified by screenshot
 	menu.row_h = 38.0
 	menu.half_w = 150.0
 	menu.add_button("[ TRY AGAIN ]", func(): ui.start_game())

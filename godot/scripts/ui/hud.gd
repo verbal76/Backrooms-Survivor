@@ -7,6 +7,7 @@ const BAR_H := 20.0
 const BAR_GAP := 5.0
 const FS := 14
 const MINI_SIZE := 124.0
+const PHONE_MINI_SIZE := 140.0
 
 var ui
 var game
@@ -118,10 +119,11 @@ func _draw() -> void:
 	var w := w0 / s
 	var h := h0 / s
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
-	_draw_left_panel(p, mode)
+	var lefty_phone: bool = ui.is_phone_ui() and mode == "touch" and game.input.opts().touch_left_handed
+	_draw_left_panel(p, mode, (w - 6.0 - (BAR_W + 16.0)) - 6.0 if lefty_phone else 0.0)
 	if mode != "touch":
 		_draw_bottom_left(h, p)       # on touch the counts live on the buttons
-	_draw_right_panel(w, p)
+	_draw_right_panel(w, p, -(w - 196.0) + 8.0 if lefty_phone else 0.0)
 	_draw_effects(w)
 	_draw_minimap(w, h, p, mode)
 	_draw_banners(w, h, p)
@@ -136,8 +138,8 @@ func _draw() -> void:
 		_draw_intro(w0, h0)
 
 
-func _draw_left_panel(p, _m: String) -> void:
-	var x := 14.0
+func _draw_left_panel(p, _m: String, ox := 0.0) -> void:
+	var x := 14.0 + ox
 	var y := 14.0
 	var rows := 6
 	var ph := rows * (BAR_H + BAR_GAP) + 34.0
@@ -204,9 +206,9 @@ func _draw_bottom_left(h: float, p) -> void:
 	UITheme.text(self, "BAT: %d" % p.batteries, r.position.x + 98, r.position.y + 8, 15, Color(0.2, 1, 0.6) if p.batteries > 0 else Color(0.4, 0.5, 0.45))
 
 
-func _draw_right_panel(w: float, p) -> void:
+func _draw_right_panel(w: float, p, ox := 0.0) -> void:
 	var pw := 176.0
-	var x := w - pw - 12.0
+	var x := w - pw - 12.0 + ox
 	var y := 12.0
 	var r := Rect2(x - 8, y - 4, pw + 12, 112)
 	UITheme.panel(self, r, Color(0, 0, 0, 0.62), Color(0.9, 0.8, 0.2, 0.18), 6, 1)
@@ -255,6 +257,10 @@ func _draw_effects(w: float) -> void:
 		return
 	var ex := w - 188.0
 	var ey := 134.0
+	if ui.is_phone_ui() and _mode == "touch":
+		var mr: Rect2 = _phone_rects(w).mini
+		ex = mr.end.x - 176.0                          # under the minimap, right-aligned to it
+		ey = mr.end.y + 8.0
 	UITheme.panel(self, Rect2(ex, ey, 176, fx.size() * 18 + 8), Color(0, 0, 0, 0.62), Color(0, 0, 0, 0), 5)
 	for i in fx.size():
 		var e = fx[i]
@@ -271,10 +277,58 @@ func _draw_effects(w: float) -> void:
 			draw_rect(Rect2(ex + 4, y, 100, 12), Color(1, 1, 0, 0.3))
 
 
+## Phone HUD geometry in HUD canvas units (before the UI scale): stats panel, info panel and the minimap between them.
+## Left-handed play mirrors the two panels (the mirrored button cluster would otherwise sit under the stats panel).
+## `pause` = the touch pause button (x centre, radius) in the same units, so the minimap never covers it.
+## One source of truth for the drawing code and for the overlap test in tools/regression_tests.gd.
+static func phone_rects(w: float, left_handed := false, pause_x := -1.0, pause_r := 0.0) -> Dictionary:
+	var left_h := 6.0 * (BAR_H + BAR_GAP) + 34.0
+	var stats := Rect2(6.0, 6.0, BAR_W + 16.0, left_h)
+	var info := Rect2(w - 196.0, 8.0, 188.0, 112.0)
+	if left_handed:
+		stats.position.x = w - 6.0 - stats.size.x
+		info.position.x = 8.0
+	var span_l := (info.end.x if left_handed else stats.end.x) + 8.0
+	var span_r := (stats.position.x if left_handed else info.position.x) - 8.0
+	var x0 := span_l
+	var x1 := span_r
+	if pause_x >= 0.0:
+		var left_free := (pause_x - pause_r - 6.0) - span_l
+		var right_free := span_r - (pause_x + pause_r + 6.0)
+		if right_free >= left_free:
+			x0 = pause_x + pause_r + 6.0
+		else:
+			x1 = pause_x - pause_r - 6.0
+	var ms := clampf(x1 - x0 - 6.0, 90.0, PHONE_MINI_SIZE)
+	var mini := Rect2(Vector2(x0 + 3.0 + maxf(0.0, (x1 - x0 - 6.0 - ms) * 0.5), 12.0), Vector2(ms, ms))
+	return {"stats": stats, "mini": mini.grow(3.0), "info": info, "mini_size": ms}
+
+
+## Android phone HUD: the minimap and effect list live in the top strip between the pause button and the info panel
+## (the corners below are taken by the sticks and buttons). Returns the minimap rect origin.
+func _phone_rects(w: float) -> Dictionary:
+	var lay: Dictionary = game.input.touch_layout()
+	var s: float = ui.hud_scale()
+	var px := -1.0
+	var pr := 0.0
+	for b in lay.buttons:
+		if b.action == "pause":
+			px = b.pos.x / s
+			pr = b.r / s
+	return phone_rects(w, game.input.opts().touch_left_handed, px, pr)
+
+
 func _draw_minimap(w: float, h: float, p, mode: String) -> void:
+	var phone: bool = ui.is_phone_ui() and mode == "touch"
 	var s := MINI_SIZE
+	var mk := 1.0                                      # marker size factor: chests, portal, enemies and the player must read on a phone
 	var pos := Vector2(w - s - 14.0, h - s - 14.0)
-	if mode == "touch":
+	if phone:
+		var mr: Rect2 = _phone_rects(w).mini.grow(-3.0)
+		s = mr.size.x
+		pos = mr.position
+		mk = 1.5
+	elif mode == "touch":
 		pos = Vector2(14.0, 232.0)
 		if game.input.opts().touch_left_handed:
 			pos = Vector2(w - s - 14.0, 150.0)     # the mirrored button cluster occupies the left edge
@@ -291,8 +345,8 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 		var cp := _to_mini(r, center, chest.pos, scale_px)
 		if clip_r.has_point(cp):
 			var pulse := 0.5 + 0.5 * sin(_t * 3.0)
-			draw_circle(cp, 7.0 + pulse * 2.0, Color(0.9, 0.7, 0.1, 0.18 + 0.12 * pulse))
-			draw_circle(cp, 3.0, Color(1, 0.85, 0.2, 0.95))
+			draw_circle(cp, (7.0 + pulse * 2.0) * mk, Color(0.9, 0.7, 0.1, 0.18 + 0.12 * pulse))
+			draw_circle(cp, 3.0 * mk, Color(1, 0.85, 0.2, 0.95))
 	# portal marker
 	var portal: Dictionary = ui._portal()
 	if not portal.is_empty() and portal.active:
@@ -300,8 +354,8 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 		var col := Color(0.2, 1, 0.7)
 		if clip_r.has_point(pp):
 			var pulse2 := 0.5 + 0.5 * sin(_t * 4.0)
-			draw_arc(pp, 5.0 + pulse2 * 3.0, 0, TAU, 20, Color(col, 0.8), 2.0)
-			draw_circle(pp, 3.0, col)
+			draw_arc(pp, (5.0 + pulse2 * 3.0) * mk, 0, TAU, 20, Color(col, 0.8), 2.0)
+			draw_circle(pp, 3.0 * mk, col)
 		else:
 			var dir := (pp - r.get_center()).normalized()
 			var edge := r.get_center() + dir * (s * 0.5 - 6.0)
@@ -311,17 +365,17 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 	for m in ui._map_markers():
 		var mp := _to_mini(r, center, m.pos, scale_px)
 		if clip_r.has_point(mp):
-			draw_rect(Rect2(mp - Vector2(1, 1), Vector2(2.5, 2.5)), UITheme.color_of(m.get("color", Color.WHITE)))
+			draw_rect(Rect2(mp - Vector2(1, 1) * mk, Vector2(2.5, 2.5) * mk), UITheme.color_of(m.get("color", Color.WHITE)))
 	if ui.difficulty <= 2 and game.enemies and game.enemies.has_method("get_enemies"):
 		for e in game.enemies.get_enemies():
 			var ep := _to_mini(r, center, e.tile_pos, scale_px)
 			if clip_r.has_point(ep):
 				var ec: Color = e.color if "color" in e and e.color is Color else Color(1, 0.3, 0.25)
-				draw_rect(Rect2(ep - Vector2(1, 1), Vector2(2.5, 2.5)), ec)
+				draw_rect(Rect2(ep - Vector2(1, 1) * mk, Vector2(2.5, 2.5) * mk), ec)
 	# player marker + facing
 	var pc := r.get_center()
-	draw_line(pc, pc + Vector2(p.fx, p.fy) * 9.0, Color(1, 0.95, 0.7, 0.8), 1.5)
-	draw_circle(pc, 3.0, Color(0.9, 0.8, 0.2))
+	draw_line(pc, pc + Vector2(p.fx, p.fy) * 9.0 * mk, Color(1, 0.95, 0.7, 0.8), 1.5 * mk)
+	draw_circle(pc, 3.0 * mk, Color(0.9, 0.8, 0.2))
 
 
 func _to_mini(r: Rect2, center: Vector2, tile: Vector2, scale_px: float) -> Vector2:

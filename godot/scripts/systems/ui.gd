@@ -159,17 +159,46 @@ func apply_options() -> void:
 	Quality.apply(game, options.quality)
 
 
+## Android phones: the UI is drawn about twice as large as on desktop (owner playtest: text was too small to read).
+## Applies only to a real mobile device (or `debug_phone` in tests); desktop, Steam Deck and Windows keep their size.
+const PHONE_BOOST := 2.0
+var debug_phone := false
+
+
+func is_phone_ui() -> bool:
+	return debug_phone or OS.has_feature("mobile")
+
+
+## Multiplier on top of Options > UI Scale: 2.0 on phones, easing down to 1.25 on tablets (bigger physical screens).
+func phone_boost() -> float:
+	if debug_phone:
+		return PHONE_BOOST
+	if not OS.has_feature("mobile"):
+		return 1.0
+	var win := DisplayServer.window_get_size()
+	var dpi := float(DisplayServer.screen_get_dpi())
+	if dpi < 80.0 or win.y <= 0:
+		return PHONE_BOOST
+	var short_in := float(mini(win.x, win.y)) / dpi
+	return clampf(remap(short_in, 3.4, 5.6, PHONE_BOOST, 1.25), 1.25, PHONE_BOOST)
+
+
 ## Scale factor for the HUD, overlays and tip cards (the menu pages scale themselves in UIScreen.apply_layout).
 func hud_scale() -> float:
 	var vp := get_viewport().get_visible_rect().size
-	return clampf(minf(options.ui_scale, vp.y / 460.0), 0.8, 1.6)
+	var boost := phone_boost()
+	var need_h := 460.0 if boost <= 1.001 else 340.0      # the phone HUD layout is more compact (minimap moves to the top)
+	var fit := vp.y / need_h
+	if boost > 1.001:
+		fit = minf(fit, vp.x / 640.0)                       # left panel + minimap + info panel side by side
+	return clampf(minf(options.ui_scale * boost, fit), 0.8, 2.2)
 
 
 func _layout_screens() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	for s in screens.values():
 		if s.visible:
-			s.apply_layout(options.ui_scale, vp)
+			s.apply_layout(options.ui_scale * phone_boost(), vp)
 
 
 func _notification(what: int) -> void:
