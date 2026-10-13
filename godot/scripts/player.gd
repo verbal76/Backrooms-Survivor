@@ -14,7 +14,7 @@ const PERK_EVERY_N_LEVELS := 2
 # Player.STATS
 const S := {
 	"hp": 100.0, "invuln_time": 1.0,
-	"stamina": 100.0, "stamina_regen": 7.0, "sprint_cost": 16.0,
+	"stamina": 100.0, "stamina_regen": 9.0, "sprint_cost": 12.0,
 	"sanity": 100.0, "sanity_drain": 0.25, "sanity_light_min": 0.2, "sanity_regen_mult": 4.0,
 	"hydration": 100.0, "hydration_drain": 0.5, "hydration_sprint": 1.5,
 	"base_speed": 3.5, "sprint_mult": 1.6, "accel": 18.0, "decel": 14.0,

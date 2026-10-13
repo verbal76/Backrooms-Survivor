@@ -22,6 +22,7 @@ func _init() -> void:
 	t_controller_prompts_are_pure()
 	t_glyph_mapping()
 	t_touch_move_and_sprint()
+	t_map_markers_and_pacing()
 	await t_phone_ui()
 	await t_phone_menus()
 	await t_enemy_attack_cycle()
@@ -678,3 +679,36 @@ func t_phone_menus() -> void:
 	ui.options.ui_scale = saved_scale
 	root.size = saved_win
 	await process_frame
+
+
+## Owner playtest: pickups show on the minimap in their own colour; lamp and stamina were fading too fast.
+func t_map_markers_and_pacing() -> void:
+	var o = g.objects
+	var before: int = o.get_map_markers().size()
+	var it = o.spawn_drop(g.player.tile_pos + Vector2(3, 0), "almond water")
+	var it2 = o.spawn_drop(g.player.tile_pos + Vector2(0, 3), "bandage")
+	var marks: Array = o.get_map_markers()
+	var found_water := false
+	var found_med := false
+	for m in marks:
+		if m.pos.distance_to(it.tile_pos) < 0.01 and m.color.is_equal_approx(it.color):
+			found_water = true
+		if m.pos.distance_to(it2.tile_pos) < 0.01 and m.color.is_equal_approx(it2.color):
+			found_med = true
+	_ok("minimap marks every pickup in its own colour", marks.size() >= before + 2 and found_water and found_med and not it.color.is_equal_approx(it2.color))
+	it.collected = true
+	var after_collect := 0
+	for m in o.get_map_markers():
+		if m.pos.distance_to(it.tile_pos) < 0.01:
+			after_collect += 1
+	_ok("a collected pickup leaves the minimap", after_collect == 0)
+	var S: Dictionary = load("res://scripts/player.gd").S
+	var lamp = load("res://scripts/systems/lighting.gd")
+	var life: float = 100.0 / lamp.BATTERY_DRAIN
+	_ok("a full headlamp battery lasts about 5 minutes", life > 290.0 and life < 320.0, "%.0f s" % life)
+	_ok("sprint empties full stamina in about 8 s and it refills in about 11 s", absf(100.0 / S.sprint_cost - 8.3) < 0.5 and absf(100.0 / S.stamina_regen - 11.1) < 0.5,
+		"%.1f s / %.1f s" % [100.0 / S.sprint_cost, 100.0 / S.stamina_regen])
+	o.items.erase(it)
+	o.items.erase(it2)
+	it.queue_free()
+	it2.queue_free()

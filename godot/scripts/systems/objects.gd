@@ -255,6 +255,19 @@ func _can_block(t: Vector2i) -> bool:
 #  items (items.lua)
 # =====================================================================================
 
+## Minimap / tactical map dots: every pickup on the floor and every chaos orb, in the pickup's own colour
+## (the same colours as the item art and the touch buttons). Collected and freed nodes are skipped.
+func get_map_markers() -> Array:
+	var out: Array = []
+	for it in items:
+		if is_instance_valid(it) and not it.collected:
+			out.append({"pos": it.tile_pos, "color": it.color})
+	for o in orbs:
+		if is_instance_valid(o) and not o.collected:
+			out.append({"pos": o.tile_pos, "color": Color(0.45, 1.0, 0.4) if o.is_buff else Color(1.0, 0.85, 0.2)})
+	return out
+
+
 func _roll_kind() -> String:
 	var roll := rng.randf()
 	for e in Loot.TYPE_THRESHOLDS:

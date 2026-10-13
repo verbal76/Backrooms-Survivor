@@ -365,7 +365,9 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 	for m in ui._map_markers():
 		var mp := _to_mini(r, center, m.pos, scale_px)
 		if clip_r.has_point(mp):
-			draw_rect(Rect2(mp - Vector2(1, 1) * mk, Vector2(2.5, 2.5) * mk), UITheme.color_of(m.get("color", Color.WHITE)))
+			var dot := Rect2(mp - Vector2(1.6, 1.6) * mk, Vector2(3.2, 3.2) * mk)
+			draw_rect(dot.grow(0.9 * mk), Color(0, 0, 0, 0.75))               # dark rim so a dot reads on any floor
+			draw_rect(dot, UITheme.color_of(m.get("color", Color.WHITE)))
 	if ui.difficulty <= 2 and game.enemies and game.enemies.has_method("get_enemies"):
 		for e in game.enemies.get_enemies():
 			var ep := _to_mini(r, center, e.tile_pos, scale_px)
