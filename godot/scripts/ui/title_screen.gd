@@ -26,8 +26,6 @@ func _on_bound() -> void:
 	menu.add_slider("Music", func(): return o.music_volume, func(v): o.music_volume = v)
 	menu.add_slider("Enemy Sounds", func(): return o.sfx_volume, func(v): o.sfx_volume = v)
 	menu.add_slider("Headlamp", func(): return o.headlamp_brightness, func(v): o.headlamp_brightness = v, 0.1, 1.0)
-	var aim := menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
-	aim["enabled"] = func(): return ui.difficulty < 3
 	menu.add_button("[ START GAME ]", func(): ui.start_game())
 	var up := menu.add_button("", _open_shop)
 	up["label_fn"] = func(): return "[ UPGRADES ]  (%d Tokens)" % ui.progression.profile(ui.difficulty).tokens
@@ -36,7 +34,7 @@ func _on_bound() -> void:
 	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", "title"))
 	menu.add_button("[ OPTIONS ]", func(): ui.show_screen("options", "title"))
 	menu.add_button("[ EXIT ]", func(): get_tree().quit(), Color(1, 0.4, 0.3))
-	menu.sel = 6
+	menu.sel = 5
 
 
 func _change_difficulty(d: int) -> void:
@@ -59,19 +57,7 @@ func _version_line() -> String:
 	return _ver_line
 
 
-func _aim_text() -> String:
-	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
 
-
-func _aim_color() -> Color:
-	if ui.difficulty >= 3:
-		return Color(0.6, 0.6, 0.6)
-	return Color(0.3, 1, 0.3) if ui.options.aim_assist else Color(1, 0.3, 0.3)
-
-
-func _toggle_aim(_d: int) -> void:
-	if ui.difficulty < 3:
-		ui.options.aim_assist = not ui.options.aim_assist
 
 
 func _open_shop() -> void:

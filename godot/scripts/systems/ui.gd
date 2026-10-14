@@ -3,12 +3,11 @@ extends Node
 ##
 ## Public API (for other systems / the integrator):
 ##   game.ui.add_message(text, color := Color.WHITE, life := 3.0)   centre-screen message log (Lua addMessage)
-##   game.ui.options          GameOptions   music_volume, sfx_volume, brightness, headlamp_brightness, aim_assist...
+##   game.ui.options          GameOptions   music_volume, sfx_volume, brightness, headlamp_brightness...
 ##   game.ui.progression      Progression   tokens / upgrades / saves
 ##   game.ui.difficulty       int 1..4 (Easy, Normal, Getting Worse, Hell)
 ##   game.ui.run_mods         Dictionary    per-run numbers other systems must honour (see _build_run_mods)
 ##   game.ui.player_name      String
-##   game.ui.aim_assist_enabled   bool
 ##   game.ui.show_portal_prompt() / game.set_state("portal")   opens the escape/stay prompt
 ##   game.ui.portal_cooldown  float > 0 while a dismissed prompt must not reopen
 ##   signals: portal_choice(escape: bool), perk_chosen(id), run_started
@@ -68,9 +67,6 @@ var screen_name := ""
 var screens := {}
 var messages: Array = []
 var handle_item_hotkeys := true      # set false if another system consumes use_water/bandage/food
-var aim_assist_enabled: bool:
-	get:
-		return options.aim_assist and difficulty < 3
 
 var hud: Control
 var overlays: Control
@@ -527,7 +523,6 @@ func _build_run_mods() -> void:
 		"sanity_drain": DIFF_SANITY[i], "hydration_drain": DIFF_HYDRATION[i], "sprint_cost": 1.0,
 		"rate_mod": 1.0, "lamp_capacity": 1.0, "start_ammo": 0, "start_bombs": 0,
 		"max_bombs": maxi(2, 6 - difficulty), "max_batteries": maxi(0, 4 - difficulty),
-		"aim_assist": aim_assist_enabled,
 	}
 	run_mods.clear()
 	run_mods.merge(d)

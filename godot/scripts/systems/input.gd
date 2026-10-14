@@ -96,16 +96,24 @@ var _prev_btn := {}
 var _ui_hold := Vector2i.ZERO
 var _ui_repeat := 0.0
 var _touch_seen := false
-var _sticks := {"left": {"id": -1, "o": Vector2.ZERO, "p": Vector2.ZERO},
-	"right": {"id": -1, "o": Vector2.ZERO, "p": Vector2.ZERO}}
+var _sticks := {"left": {"id": -1, "o": Vector2.ZERO, "p": Vector2.ZERO}}   # the move stick only: no manual aim stick
 var _btn_touch := {}                   # touch index -> action (held buttons)
 var _btn_flash := {}                   # action -> seconds of pressed feedback
 var _tap_timer := 0.0
 var _tap_count := 0
 var _layer: CanvasLayer
 var _touch_ui: Control
-var _touch_aim_dir := Vector2.RIGHT
-var _gp_aim_dir := Vector2.RIGHT
+# ---- automatic targeting: ONE authoritative combat facing for touch and gamepad ----------------------------------
+# The player body, the held weapon, the swing / bullet direction and the hit test all read player.angle, which is
+# driven only by aim_world. For touch and gamepad aim_world is ALWAYS facing_dir (below); the left stick / movement
+# never steers it while a target exists. Keyboard + mouse keeps its cursor aim (no stick to take over).
+const AUTO_TARGET_RANGE := 10.0          # tiles
+const TARGET_SWITCH_MARGIN := 0.6        # tiles: another enemy must be this much closer before the target changes (no flicker)
+var facing_dir := Vector2.RIGHT          # unit vector; last known facing is kept while standing still with no target
+var target = null                        # the enemy currently being faced (or null)
+var facing_snap := false                 # true for touch / gamepad: the player turns to facing_dir instantly
+const FIRE_BUFFER := 0.16                # seconds a short ATTACK press stays "pressed" (hit-stop, cooldown, between ticks)
+var _fire_buffer := 0.0
 var _sprint_latched := false           # touch SPRINT toggle (tap on / tap off); gamepad and keyboard still hold
 const TOUCH_DEADZONE := 0.15            # of the move-stick radius; past it the stick gives a full-speed DIRECTION only
 const TOUCH_SPRINT_MIN_STAMINA := 5.0   # a sprint can only be switched on with at least this much stamina
@@ -150,6 +158,7 @@ func _notification(what: int) -> void:
 		# drop held state so nothing sticks after alt-tab / Steam overlay / Deck suspend
 		_just.clear()
 		_fire_latch = false
+		_fire_buffer = 0.0
 		_prev_btn.clear()
 		stop_rumble()
 
@@ -330,10 +339,8 @@ func move_prompt(m := "") -> String:
 func aim_prompt(m := "") -> String:
 	m = active_mode() if m == "" else m
 	match m:
-		"gamepad":
-			return "Right Stick"
-		"touch":
-			return "the right stick (drag)"
+		"gamepad", "touch":
+			return "automatic targeting"
 		_:
 			return "the mouse"
 
@@ -344,6 +351,8 @@ func prompt(action: String, m := "") -> String:
 		return move_prompt(m)
 	if action == "aim":
 		return aim_prompt(m)
+	if action == "facing":
+		return "Aim with the mouse." if m == "keyboard" else "Your character automatically faces the nearest enemy it can see - walls block targeting."
 	if action in ["accept", "back", "menu"]:
 		match m:
 			"gamepad":
@@ -407,12 +416,12 @@ func controls_list(m := "") -> Array:
 	var out: Array = []
 	match m:
 		"touch":
-			out = [["Left side drag", "Move (floating stick)"], ["Right side drag", "Aim, auto-fires"],
-				["ATTACK (hold)", "Attack, auto-aims at nearest enemy"], ["SPRINT", "Tap to toggle sprint on / off"],
+			out = [["Left side drag", "Move (direction only)"],
+				["ATTACK (tap / hold)", "Attack the enemy you auto-face"], ["SPRINT", "Tap to toggle sprint on / off"],
 				["BOMB", "Throw a bomb"], ["WPN", "Cycle weapon"], ["H2O / MED / EAT", "Drink / bandage / eat"],
 				["LAMP / BAT", "Headlamp / replace battery"], ["||", "Pause / menu"], ["Double-tap centre", "Pause / menu"]]
 		"gamepad":
-			out = [["Left Stick", "Move"], ["Right Stick", "Aim (auto-aim when idle)"]]
+			out = [["Left Stick", "Move (any direction while attacking)"], ["Auto-target", "Faces the nearest visible enemy"]]
 			for a in ACTIONS:
 				if int(a.pad) != -2 and pad_of(a.id) >= 0:
 					out.append([pad_name(pad_of(a.id)), String(a.label)])
@@ -562,12 +571,17 @@ func tick(dt: float) -> void:
 	else:
 		_update_keyboard()
 
+	if _fire_buffer > 0.0:
+		if playing:
+			fire = true
+		_fire_buffer = maxf(0.0, _fire_buffer - dt)
 	if not playing:
 		for s in _sticks.values():
 			s.id = -1
 		_btn_touch.clear()
 		move = Vector2.ZERO
 		fire = false
+		_fire_buffer = 0.0
 	refused_t = maxf(0.0, refused_t - dt)
 	_refuse_cd = maxf(0.0, _refuse_cd - dt)
 	if playing and fire and game.ui != null:
@@ -609,6 +623,19 @@ func end_frame() -> void:
 	_fire_latch = false
 
 
+## An ATTACK press (any device): seen by the next tick even if released before it, and kept for FIRE_BUFFER seconds so a
+## press during the weapon cooldown / a hit-stop still attacks the moment it is legal. weapons.gd calls consume_fire()
+## when an attack really starts, so one press never produces two attacks and a released button never keeps attacking.
+func _latch_fire() -> void:
+	_fire_latch = true
+	_fire_buffer = FIRE_BUFFER
+
+
+func consume_fire() -> void:
+	_fire_buffer = 0.0
+	_fire_latch = false
+
+
 func _player_px() -> Vector2:
 	return game.player.position if game and game.player else Vector2.ZERO
 
@@ -626,6 +653,8 @@ func _update_keyboard() -> void:
 		- float(_kheld("move_up") or Input.is_physical_key_pressed(KEY_UP)))
 	if text_entry:
 		raw = Vector2.ZERO
+	facing_snap = false
+	target = null
 	aim_world = game.get_global_mouse_position()
 	var to := aim_world - _player_px()
 	if to != Vector2.ZERO:
@@ -694,17 +723,7 @@ func _update_gamepad(dt: float) -> void:
 	var lx := ls.x
 	var ly := ls.y
 	move = ls
-	var rs := _stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
-	var rx := rs.x
-	var ry := rs.y
-	aim_active = rs != Vector2.ZERO
-	if aim_active:
-		_gp_aim_dir = rs.normalized()
-		aim_angle = _gp_aim_dir.angle()
-		aim_world = _player_px() + _gp_aim_dir * 5.0 * game.TILE
-	else:
-		aim_world = _player_px() + _gp_aim_dir * 5.0 * game.TILE
-		_try_aim_assist()
+	_update_auto_facing()                   # the right stick is NOT used for aiming: automatic targeting owns the facing
 	fire = _code_held(pad_of("attack")) or _fire_latch
 	alt_fire = _code_held(pad_of("tactical_map"))
 	sprint = _code_held(pad_of("sprint"))
@@ -725,6 +744,9 @@ func _update_gamepad(dt: float) -> void:
 		_prev_btn[key] = now
 
 	# UI navigation pulses (d-pad + both sticks), with hold-repeat
+	var rs := _stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)      # menus only: the right stick never aims in play
+	var rx := rs.x
+	var ry := rs.y
 	var sx := lx if absf(lx) > absf(rx) else rx
 	var sy := ly if absf(ly) > absf(ry) else ry
 	var hx := 0
@@ -770,38 +792,92 @@ func _ui_pulse(hold: Vector2i, dt: float) -> void:
 			press("ui_down")
 
 
-## Gamepad auto-aim (main.lua aimAssist): lock the nearest visible enemy while the aim stick is idle.
-func _try_aim_assist() -> void:
-	if game.state != "playing" or game.enemies == null or not game.enemies.has_method("get_enemies"):
-		return
-	var ui = game.ui
-	if ui == null or not ui.get("aim_assist_enabled"):
-		return
-	var best := 15.0
-	var target = null
-	var ppos: Vector2 = game.player.tile_pos
-	for e in game.enemies.get_enemies():
-		var d: float = e.tile_pos.distance_to(ppos)
-		if d < best and _has_los(ppos, e.tile_pos):
-			best = d
-			target = e
-	if target != null:
-		aim_world = target.tile_pos * game.TILE
-		aim_active = true
-		var to: Vector2 = aim_world - _player_px()
-		if to != Vector2.ZERO:
-			aim_angle = to.angle()
-
-
-func _has_los(a: Vector2, b: Vector2) -> bool:
-	if game.map == null:
+## Exact tile-grid line of sight from `a` to `b` (tile coordinates), Amanatides-Woo traversal against the real level
+## collision (WorldMap.is_solid). The tile the shooter stands in and the tile the target stands in are never counted,
+## so the ray cannot collide with the player or the target itself. A ray through the exact corner shared by two
+## solid tiles is blocked (no squeezing through diagonal wall joints).
+func has_clear_los(a: Vector2, b: Vector2) -> bool:
+	if game == null or game.map == null:
 		return true
-	var steps := int(a.distance_to(b) * 2.0)
-	for i in range(1, steps):
-		var p := a.lerp(b, float(i) / steps)
-		if game.map.is_solid(p.x, p.y):
+	var x := floori(a.x)
+	var y := floori(a.y)
+	var ex := floori(b.x)
+	var ey := floori(b.y)
+	if x == ex and y == ey:
+		return true
+	var d := b - a
+	var sx := 1 if d.x > 0.0 else -1
+	var sy := 1 if d.y > 0.0 else -1
+	var tdx := INF if d.x == 0.0 else absf(1.0 / d.x)
+	var tdy := INF if d.y == 0.0 else absf(1.0 / d.y)
+	var tmx := INF if d.x == 0.0 else ((float(x + 1) - a.x) if sx > 0 else (a.x - float(x))) * tdx
+	var tmy := INF if d.y == 0.0 else ((float(y + 1) - a.y) if sy > 0 else (a.y - float(y))) * tdy
+	var guard := 0
+	while (x != ex or y != ey) and guard < 80:
+		guard += 1
+		if absf(tmx - tmy) < 0.000001:
+			if game.map.is_solid(float(x + sx) + 0.5, float(y) + 0.5) and game.map.is_solid(float(x) + 0.5, float(y + sy) + 0.5):
+				return false
+			x += sx
+			y += sy
+			tmx += tdx
+			tmy += tdy
+		elif tmx < tmy:
+			x += sx
+			tmx += tdx
+		else:
+			y += sy
+			tmy += tdy
+		if x == ex and y == ey:
+			break
+		if game.map.is_solid(float(x) + 0.5, float(y) + 0.5):
 			return false
 	return true
+
+
+## Nearest enemy that is alive, within AUTO_TARGET_RANGE and in clear line of sight. The current target keeps the
+## lock unless another eligible enemy is clearly closer (TARGET_SWITCH_MARGIN), so two similar distances do not flicker.
+func pick_target():
+	if game == null or game.enemies == null or game.player == null or not game.enemies.has_method("get_enemies"):
+		return null
+	var ppos: Vector2 = game.player.tile_pos
+	var best = null
+	var best_d := INF
+	var cur_ok := false
+	var cur_d := 0.0
+	for e in game.enemies.get_enemies():
+		if not is_instance_valid(e) or e.dead:
+			continue
+		var d: float = e.tile_pos.distance_to(ppos)
+		if d > AUTO_TARGET_RANGE or not has_clear_los(ppos, e.tile_pos):
+			continue
+		if e == target:
+			cur_ok = true
+			cur_d = d
+		if d < best_d:
+			best_d = d
+			best = e
+	if cur_ok and best != target and best_d > cur_d - TARGET_SWITCH_MARGIN:
+		return target
+	return best
+
+
+## THE facing authority for touch and gamepad: face the target if there is one, else the way you walk, else keep the
+## last facing. Writes aim_world / aim_angle, the only values the player (and so the weapon and the hit test) follow.
+func _update_auto_facing() -> void:
+	if game == null or game.player == null:
+		return
+	target = pick_target() if game.state == "playing" else null
+	if target != null:
+		var to: Vector2 = target.tile_pos - game.player.tile_pos
+		if to != Vector2.ZERO:
+			facing_dir = to.normalized()
+	elif move.length() > 0.2:
+		facing_dir = move.normalized()
+	facing_snap = true
+	aim_active = target != null
+	aim_angle = facing_dir.angle()
+	aim_world = _player_px() + facing_dir * 5.0 * game.TILE
 
 
 # ---- touch -----------------------------------------------------------------------------------
@@ -859,7 +935,7 @@ func touch_layout(view := Vector2.ZERO) -> Dictionary:
 	var stick_r := 86.0 * k
 	var buttons: Array = []
 	# right-hand cluster (mirrored when left-handed): big ATTACK in the corner, utility buttons arc above it
-	buttons.append(_tbtn(v, lh, R - 92.0 * k, B - 92.0 * k, 80.0 * k, "attack", Color(1, 0.25, 0.2)))
+	buttons.append(_tbtn(v, lh, R - 100.0 * k, B - 100.0 * k, 90.0 * k, "attack", Color(1, 0.25, 0.2)))
 	buttons.append(_tbtn(v, lh, R - 46.0 * k, B - 236.0 * k, 42.0 * k, "bomb", Color(1, 0.5, 0.1)))
 	buttons.append(_tbtn(v, lh, R - 144.0 * k, B - 214.0 * k, 40.0 * k, "weapon_next", Color(0.75, 0.75, 0.8)))
 	buttons.append(_tbtn(v, lh, R - 46.0 * k, B - 330.0 * k, 38.0 * k, "battery", Color(0.2, 1, 0.6)))
@@ -872,12 +948,10 @@ func touch_layout(view := Vector2.ZERO) -> Dictionary:
 	buttons.append(_tbtn(v, lh, L + 232.0 * k, qy, 42.0 * k, "use_food", Color(0.85, 0.65, 0.25)))
 	buttons.append({"pos": Vector2(v.x * 0.5, T + 30.0 * k), "r": 28.0 * k, "action": "pause", "label": "||", "color": Color(0.9, 0.8, 0.2)})
 	var move_x := L + 128.0 * k
-	var aim_x := R - 92.0 * k - 80.0 * k - 40.0 * k - stick_r
 	var move_c := Vector2(v.x - move_x if lh else move_x, B - 98.0 * k)
-	var aim_c := Vector2(v.x - aim_x if lh else aim_x, B - 98.0 * k)
 	var half := v.x * 0.5
 	var move_zone := Rect2(0, 0, half, v.y) if not lh else Rect2(half, 0, half, v.y)
-	return {"k": k, "buttons": buttons, "stick_r": stick_r, "move_c": move_c, "aim_c": aim_c,
+	return {"k": k, "buttons": buttons, "stick_r": stick_r, "move_c": move_c,
 		"move_zone": move_zone, "safe": Rect2(L, T, R - L, B - T)}
 
 
@@ -890,8 +964,6 @@ func _update_touch(_playing: bool) -> void:
 	var maxr: float = lay.stick_r
 	var k: float = lay.k
 	var l: Dictionary = _sticks.left
-	var r: Dictionary = _sticks.right
-	aim_active = false
 	var attacking: bool = _btn_touch.values().has("attack")
 	if l.id >= 0:
 		var d: Vector2 = l.p - l.o
@@ -906,40 +978,9 @@ func _update_touch(_playing: bool) -> void:
 		_btn_flash["sprint"] = 0.18
 	if _sprint_latched and move.length() > 0.1:
 		sprint = true
-	var aimed := false
-	if r.id >= 0:
-		var d2: Vector2 = r.p - r.o
-		if d2.length() > 10.0 * k:
-			_touch_aim_dir = d2.normalized()
-			aim_angle = d2.angle()
-			aimed = true
-			aim_active = true
-			fire = true     # input.lua: dragging the right stick auto-fires
 	if attacking:
 		fire = true
-		if not aimed:
-			var tgt := _nearest_enemy_dir()
-			if tgt != Vector2.ZERO:
-				_touch_aim_dir = tgt
-			elif move.length() > 0.2:
-				_touch_aim_dir = move.normalized()
-	elif not aimed and move.length() > 0.2:
-		_touch_aim_dir = move.normalized()   # face where you walk when nothing is aimed
-	aim_world = _player_px() + _touch_aim_dir * 5.0 * game.TILE
-
-
-## Direction to the closest enemy within 7 tiles (used by the ATTACK button), or ZERO.
-func _nearest_enemy_dir() -> Vector2:
-	if game.enemies == null or game.player == null:
-		return Vector2.ZERO
-	var best := 7.0
-	var dir := Vector2.ZERO
-	for e in game.enemies.get_enemies():
-		var d: Vector2 = e.tile_pos - game.player.tile_pos
-		if d.length() < best:
-			best = d.length()
-			dir = d.normalized()
-	return dir
+	_update_auto_facing()
 
 
 ## Index of the button a touch at pos hits (hit radius = max(1.4x visual, a minimum finger size); the nearest
@@ -950,7 +991,7 @@ func _pick_button(pos: Vector2, lay: Dictionary) -> int:
 	var k: float = lay.k
 	for i in lay.buttons.size():
 		var b: Dictionary = lay.buttons[i]
-		var hr := maxf(b.r * 1.4, 34.0 * k)
+		var hr := maxf(b.r * (1.2 if b.action == "attack" else 1.4), 34.0 * k)   # ATTACK: touch area ~ the drawn disc (+20%)
 		var d: float = pos.distance_to(b.pos)
 		if d <= hr and d - b.r < best_d:
 			best_d = d - b.r
@@ -984,7 +1025,10 @@ func _handle_touch(event: InputEventScreenTouch) -> void:
 	if bi >= 0:
 		var b: Dictionary = lay.buttons[bi]
 		_btn_flash[b.action] = 0.18               # instant pressed feedback
-		if b.action == "sprint":
+		if b.action == "attack":
+			_latch_fire()                         # a tap shorter than a frame / during hit-stop / cooldown is not lost
+			_btn_touch[event.index] = b.action
+		elif b.action == "sprint":
 			if _sprint_latched:
 				_sprint_latched = false
 			elif touch_enabled("sprint"):
@@ -1008,9 +1052,10 @@ func _handle_touch(event: InputEventScreenTouch) -> void:
 			_tap_count = 1
 		_tap_timer = DOUBLE_TAP_TIME
 	# stick: left/right half; a touch inside the resting circle snaps to it (fixed stick), anywhere else floats
-	var is_move: bool = lay.move_zone.has_point(pos)
-	var s: Dictionary = _sticks.left if is_move else _sticks.right
-	var rest: Vector2 = lay.move_c if is_move else lay.aim_c
+	if not lay.move_zone.has_point(pos):
+		return                              # no aim stick any more: the other half only has buttons
+	var s: Dictionary = _sticks.left
+	var rest: Vector2 = lay.move_c
 	if s.id < 0:
 		s.id = event.index
 		s.o = rest if pos.distance_to(rest) <= lay.stick_r * 1.15 else pos
@@ -1055,12 +1100,11 @@ func _draw_touch() -> void:
 	var op := opts().touch_opacity
 	var font := UITheme.title_font()
 	var tt := 1.4 if (game.ui != null and game.ui.is_phone_ui()) else 1.0     # phone: captions and counters ~40% larger (the sticks are not)
-	# "left" stick record = move stick, "right" = aim stick (regardless of which side they sit on)
-	var rest := {"left": lay.move_c, "right": lay.aim_c}
-	var names := {"left": "MOVE", "right": "AIM"}
-	for key in ["left", "right"]:
+	var rest := {"left": lay.move_c}
+	var names := {"left": "MOVE"}
+	for key in ["left"]:
 		var s: Dictionary = _sticks[key]
-		var col := Color(1, 1, 1) if key == "left" else Color(1, 0.3, 0.2)
+		var col := Color(1, 1, 1)
 		var o: Vector2 = s.o if s.id >= 0 else rest[key]
 		var kp: Vector2 = s.p if s.id >= 0 else o
 		draw_stick(o, maxr, kp, col, op if s.id >= 0 else op * 0.8, k)
@@ -1172,7 +1216,7 @@ func _input(event: InputEvent) -> void:
 			_set_detected("keyboard")
 			_mouse_acc = 100.0
 			if event.button_index == MOUSE_BUTTON_LEFT:
-				_fire_latch = true
+				_latch_fire()
 		if game.state == "playing":
 			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 				press("weapon_next")
@@ -1198,10 +1242,10 @@ func _input(event: InputEvent) -> void:
 			_set_detected("gamepad")
 		if active_mode() == "gamepad" and event.axis == JOY_AXIS_TRIGGER_RIGHT and event.axis_value > 0.3 \
 				and pad_of("attack") == 101:
-			_fire_latch = true
+			_latch_fire()
 		elif active_mode() == "gamepad" and event.axis == JOY_AXIS_TRIGGER_LEFT and event.axis_value > 0.3 \
 				and pad_of("attack") == 100:
-			_fire_latch = true
+			_latch_fire()
 
 
 ## While a binding is being captured: returns true if the event was consumed.
@@ -1262,7 +1306,7 @@ func _pad_button_pressed(b: int) -> void:
 		if pad_of(a) == b:
 			press(a)
 	if pad_of("attack") == b:
-		_fire_latch = true
+		_latch_fire()
 
 
 func _touch_controls_allowed() -> bool:
@@ -1306,7 +1350,7 @@ func _key_pressed(event: InputEventKey) -> void:
 	if _maps_dirty:
 		_rebuild_maps()
 	if k == key_of("attack") and nav_ok:
-		_fire_latch = true
+		_latch_fire()
 	if k == KEY_SPACE and nav_ok:
 		press("ui_accept")
 	if k == KEY_TAB and nav_ok:

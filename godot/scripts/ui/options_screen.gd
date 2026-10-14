@@ -63,8 +63,6 @@ func _on_bound() -> void:
 	rs["fmt"] = pct
 	var dz := pad_menu.add_slider("Stick Dead Zone", func(): return o.pad_deadzone, func(v): o.pad_deadzone = v, 0.05, 0.4, 0.05)
 	dz["fmt"] = pct
-	var aim := pad_menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
-	aim["enabled"] = func(): return ui.difficulty < 3
 	pad_menu.add_choice("Button Prompts", func(): return GameOptions.PROMPT_STYLES[clampi(o.prompt_style, 0, GameOptions.PROMPT_STYLES.size() - 1)], func(d): o.prompt_style = posmod(o.prompt_style + d, GameOptions.PROMPT_STYLES.size()))
 	pad_menu.add_toggle("System Keyboard", func(): return o.steam_keyboard, func(_d): o.steam_keyboard = not o.steam_keyboard)
 	pad_menu.add_button("[ BUTTON LAYOUT ]", func(): _open_section("controls"))
@@ -108,19 +106,7 @@ func _set_rumble_strength(v: float) -> void:
 	ui.input.rumble("kill")
 
 
-func _aim_text() -> String:
-	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
 
-
-func _aim_color() -> Color:
-	if ui.difficulty >= 3:
-		return Color(0.6, 0.6, 0.6)
-	return Color(0.3, 1, 0.3) if ui.options.aim_assist else Color(1, 0.3, 0.3)
-
-
-func _toggle_aim(_d: int) -> void:
-	if ui.difficulty < 3:
-		ui.options.aim_assist = not ui.options.aim_assist
 
 
 func _cycle_quality(d: int) -> void:
@@ -490,7 +476,7 @@ func _draw_touch(w: float, h: float, a: float) -> void:
 	var op: float = ui.options.touch_opacity
 	var f := op / 0.6
 	var font := UITheme.title_font()
-	for key in ["move_c", "aim_c"]:
+	for key in ["move_c"]:
 		var c: Vector2 = pr.position + lay[key] * sc
 		var col := Color(1, 1, 1) if key == "move_c" else Color(1, 0.3, 0.2)
 		draw_circle(c, lay.stick_r * sc, Color(col, minf(1.0, 0.16 * f)))

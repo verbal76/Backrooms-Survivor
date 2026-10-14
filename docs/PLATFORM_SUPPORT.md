@@ -33,3 +33,17 @@ UI Scale and is capped so each page still fits. What changed on phones only:
 - Not changed (still ~1.4x, screens too dense for a 360 px tall canvas): Upgrades shop, character select, name entry.
 Evidence: `docs/android_ui_before_after/` (same seed and game state, 1280x580). Tests: `t_phone_ui`, `t_phone_menus` in
 `godot/tools/regression_tests.gd` check the scale, on-screen bounds and overlap with every touch control at five phone sizes.
+
+## Automatic targeting and attack input (release-candidate pass)
+- **Facing authority:** for touch and gamepad the combat facing is decided in ONE place, `GameInput._update_auto_facing()`: face the nearest
+  living enemy within 10 tiles that has a clear tile-grid line of sight (`has_clear_los`, exact traversal of the real level collision; the
+  shooter's and the target's own tiles never count); no target -> face the way you walk; standing still -> keep the last facing. It writes
+  `aim_world`, the player turns to it instantly (`snap_facing`), and the body sprite, held weapon, swing / bullet direction and hit test all read
+  `player.angle`. The movement stick never steers the facing while a target exists. Walls, range and corners behave as in
+  `tools/regression_tests.gd` tests A-J.
+- **No manual aim:** there is no right aim joystick on touch, the gamepad right stick is menu-only, and the Aim Assist option is gone.
+  Keyboard + mouse keeps cursor aim (it has no stick to take over); that is the only manual aim left and is an owner decision to keep or remove.
+- **ATTACK input:** every press is latched and buffered for 0.16 s (`FIRE_BUFFER`); `weapons.gd` consumes it when an attack really starts, so
+  short taps, taps during hit-stop and taps just before the cooldown ends register, while the weapon cooldown, stamina cost and damage are untouched.
+- **Weapon mirroring:** the side the weapon is drawn on follows the facing (with a dead band at vertical), never the animated swing angle.
+- **HUD:** compact stats / combat panels (about 50% / 45% smaller), notifications drawn below the character.

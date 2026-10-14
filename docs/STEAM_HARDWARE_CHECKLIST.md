@@ -28,7 +28,7 @@ Status: **PASS** = implemented and verified here; **PASS (code)** = implemented,
 | # | Requirement | Status | Notes |
 |---|---|---|---|
 | 1 | Default controller config reaches ALL content, no settings changes | PASS | `padwalk` script (synthetic joypad events): story skip, save slots, name entry, title, How To Play, options (+ sub pages, rebinding capture), shop, character screen, run start, gameplay, tips, pause, focus loss, perk choice, portal prompt, escape/victory, death (try again / main menu), EXIT. |
-| 2 | Supports the Deck's controls: both sticks, triggers, bumpers, D-Pad, face buttons, View/Menu, L3/R3, back grips | PASS (grips: code) | Left stick move / right stick aim / RT attack / LT map / bumpers / D-Pad / face buttons / L3 R3 / View / Menu all mapped. Back grips map to `JOY_BUTTON_PADDLE1-4` (rebindable; defaults quick heal / drink / bomb / lamp). Steam Input's XInput-style virtual pad does not expose paddles unless bound in the Steam configurator, see "Steam Input". |
+| 2 | Supports the Deck's controls: both sticks, triggers, bumpers, D-Pad, face buttons, View/Menu, L3/R3, back grips | PASS (grips: code) | Left stick move / automatic targeting (the right stick is NOT used to aim) / RT attack / LT map / bumpers / D-Pad / face buttons / L3 R3 / View / Menu all mapped. Back grips map to `JOY_BUTTON_PADDLE1-4` (rebindable; defaults quick heal / drink / bomb / lamp). Steam Input's XInput-style virtual pad does not expose paddles unless bound in the Steam configurator, see "Steam Input". |
 | 3 | Steam Controller inputs | PASS (code) | Same Xbox-style layout through Steam Input. |
 | 4 | Trackpads | n/a | Recommended config leaves them unbound; with "Gamepad with Mouse Trackpad" they act as a mouse and the UI switches to keyboard/mouse prompts only after real mouse movement (40 px hysteresis while a pad is in use). |
 | 5 | Touchscreen | PASS | Taps are emulated mouse clicks and work in all menus (tested). They never switch the game into the on-screen touch controls on desktop/Deck unless the player forces "Touch". |
@@ -76,7 +76,7 @@ Status: **PASS** = implemented and verified here; **PASS (code)** = implemented,
 | Button | Gameplay | Menus |
 |---|---|---|
 | Left stick | Move | Navigate |
-| Right stick | Aim (auto-aim when idle, Easy/Normal) | Navigate |
+| Right stick | not used in play (automatic targeting faces the nearest visible enemy) | Navigate |
 | RT | Attack | |
 | LT (hold) | Tactical map | |
 | RB / LB | Throw bomb / headlamp | |

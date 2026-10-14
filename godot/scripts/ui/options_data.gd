@@ -26,7 +26,7 @@ var control_mode := 0              # index in CONTROL_MODES
 var prompt_style := 0              # index in PROMPT_STYLES (controller button art); additive, absent in old saves = Auto
 var res_index := 2
 var fullscreen := false
-var aim_assist := true
+var aim_assist := true             # legacy (manual-aim era): still saved/loaded so old options.json files stay valid, no longer used
 var difficulty := 1                # 1..4 (last selected)
 var last_character := ""
 # controls (see GameInput.ACTIONS for the action ids). Only rebound entries are stored; the rest use defaults.

@@ -317,8 +317,14 @@ func _draw() -> void:
 				sprint_pos = b.pos
 				sprint_r = b.r
 		var lh: bool = game.input.opts().touch_left_handed
-		var free_l: float = (lay.aim_c.x + lay.stick_r + 10.0) if lh else (sprint_pos.x + sprint_r + 10.0)
-		var free_r: float = (sprint_pos.x - sprint_r - 10.0) if lh else (lay.aim_c.x - lay.stick_r - 10.0)
+		var atk_pos := Vector2.ZERO
+		var atk_r := 0.0
+		for b2 in lay.buttons:
+			if b2.action == "attack":
+				atk_pos = b2.pos
+				atk_r = b2.r
+		var free_l: float = (atk_pos.x + atk_r + 10.0) if lh else (sprint_pos.x + sprint_r + 10.0)
+		var free_r: float = (sprint_pos.x - sprint_r - 10.0) if lh else (atk_pos.x - atk_r - 10.0)
 		cw = clampf((free_r - free_l) / s, 200.0, 640.0)
 		cx_center = (free_l + free_r) * 0.5 / s
 		fs = 18 if cw >= 300.0 else 16

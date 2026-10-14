@@ -37,6 +37,7 @@ var map: WorldMap
 var tile_pos := Vector2.ZERO
 var vel := Vector2.ZERO
 var angle := 0.0
+var snap_facing := false   # set by game.gd from input.facing_snap (touch / gamepad auto-targeting)
 var fx := 1.0          # facing vector (cos/sin of angle)
 var fy := 0.0
 
@@ -164,8 +165,11 @@ func step(dt: float, input_dir: Vector2, want_sprint: bool, aim_world: Vector2, 
 func aim_at(world_px: Vector2, dt: float) -> void:
 	var to := world_px / TILE - tile_pos
 	if to != Vector2.ZERO:
-		var diff := wrapf(to.angle() - angle, -PI, PI)
-		angle += diff * minf(1.0, 20.0 * dt)
+		if snap_facing:
+			angle = to.angle()       # automatic targeting: the body, weapon, swing and hit test turn at once and agree
+		else:
+			var diff := wrapf(to.angle() - angle, -PI, PI)
+			angle += diff * minf(1.0, 20.0 * dt)
 		fx = cos(angle)
 		fy = sin(angle)
 

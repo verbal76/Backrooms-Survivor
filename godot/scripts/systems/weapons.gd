@@ -307,6 +307,8 @@ func _try_fire(p) -> void:
 				_miss_msg = 2.0
 
 	fire_timer = maxf(fire_timer, -get_physics_process_delta_time()) + wep.rate * rate_mod * (TIRED_RATE if _tired else 1.0)
+	if game.input != null:
+		game.input.consume_fire()        # this press has been served: the input buffer must not trigger a second attack
 	p.stamina = maxf(0.0, p.stamina - wep.stamina_cost)
 	p.noise = minf(100.0, p.noise + wep.noise * (0.5 if miss else 1.0))
 	fired.emit(current)

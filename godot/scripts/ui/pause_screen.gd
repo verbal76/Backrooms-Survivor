@@ -1,5 +1,5 @@
 extends UIScreen
-## Pause menu (drawPauseMenu): run summary + volume/brightness/headlamp sliders, aim assist, resume, options, quit.
+## Pause menu (drawPauseMenu): run summary + volume/brightness/headlamp sliders, resume, options, quit.
 
 var menu := MenuList.new()
 
@@ -12,27 +12,13 @@ func _on_bound() -> void:
 	menu.add_slider("Enemy Sounds", func(): return o.sfx_volume, func(v): o.sfx_volume = v)
 	menu.add_slider("Brightness", func(): return o.brightness, func(v): o.brightness = v)
 	menu.add_slider("Headlamp", func(): return o.headlamp_brightness, func(v): o.headlamp_brightness = v, 0.1, 1.0)
-	var aim := menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
-	aim["enabled"] = func(): return ui.difficulty < 3
 	menu.add_button("[ RESUME ]", _resume)
 	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", "pause"))
 	menu.add_button("[ OPTIONS ]", func(): ui.show_screen("options", "pause"))
 	menu.add_button("[ QUIT TO MENU ]", func(): ui.back_to_title(), Color(1, 0.4, 0.3))
 
 
-func _aim_text() -> String:
-	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
 
-
-func _aim_color() -> Color:
-	if ui.difficulty >= 3:
-		return Color(0.6, 0.6, 0.6)
-	return Color(0.3, 1, 0.3) if ui.options.aim_assist else Color(1, 0.3, 0.3)
-
-
-func _toggle_aim(_d: int) -> void:
-	if ui.difficulty < 3:
-		ui.options.aim_assist = not ui.options.aim_assist
 
 
 func _resume() -> void:
@@ -41,7 +27,7 @@ func _resume() -> void:
 
 
 func _on_open(_arg) -> void:
-	menu.sel = 5
+	menu.sel = 4
 	menu.enter_t = 0.0
 	menu.hl_y = -1.0
 	menu.pop.clear()
