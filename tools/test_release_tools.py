@@ -186,5 +186,21 @@ check("gate.sh: permission lookup failure fails closed", gate(gh_ok=False) != 0)
 check("gate.sh: non-tip source refused", gate(src="b" * 40) != 0)
 check("gate.sh: re-run refused", gate(attempt="2") != 0)
 
+# android signing: pinned certificate gate (pure function; no apksigner needed)
+sys.path.insert(0, HERE)
+import android_signing as AS
+D1, D2 = "1" * 64, "2" * 64
+out1 = "Signer #1 certificate SHA-256 digest: " + D1
+check("signing: matching pin passes", AS.check(out1, "release", D1)[0])
+check("signing: different key refused (would break in-place updates)", not AS.check(out1, "release", D2)[0])
+check("signing: no pin yet passes but says so", AS.check(out1, "release", "")[0] and "pinned" in AS.check(out1, "release", "")[1])
+check("signing: invalid pin file refused", not AS.check(out1, "release", "invalid")[0])
+check("signing: two signers refused", not AS.check(out1 + "\nSigner #2 certificate SHA-256 digest: " + D2, "release", "")[0])
+check("signing: unsigned output refused", not AS.check("", "release", "")[0])
+bw = open(os.path.join(HERE, "..", ".github/workflows/build-all.yml")).read()
+check("workflow: release mode fails closed without the signing secrets", 'inputs.mode }}" = "release" ]; then' in bw and "ANDROID_KEYSTORE_B64" in bw)
+check("workflow: manual publish workflows pass the signing secrets", all("secrets: inherit" in open(os.path.join(HERE, "..", ".github/workflows", f)).read() for f in ("release-build.yml", "dev-build.yml")))
+check("workflow: validate build passes no secrets", "secrets:" not in open(os.path.join(HERE, "..", ".github/workflows/validate-build.yml")).read().split("uses: ./.github/workflows/build-all.yml")[1])
+
 print("RELEASE TOOLS: " + ("PASSED" if not fails else "FAILED " + ", ".join(fails)))
 sys.exit(1 if fails else 0)

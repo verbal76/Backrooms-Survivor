@@ -77,6 +77,7 @@ jobs:
       build_number: ${{ inputs.build_number }}
       platform: ${{ inputs.platform }}
       retention_days: 14
+    secrets: inherit
 
   package:
     needs: build
@@ -96,7 +97,7 @@ jobs:
           ls -la release
       - uses: actions/upload-artifact@v4
         with:
-          name: coordinated-release-assets
+          name: coordinated-release-assets-b${{ inputs.build_number }}-${{ substr(inputs.source_sha, 0, 7) }}
           path: release/*
           retention-days: 14
 
@@ -125,7 +126,7 @@ jobs:
         run: tools/publish_gate.sh
       - uses: actions/download-artifact@v4
         with:
-          name: coordinated-release-assets
+          name: coordinated-release-assets-b${{ inputs.build_number }}-${{ substr(inputs.source_sha, 0, 7) }}
           path: release
       - name: Create immutable release build-NN
         env:
