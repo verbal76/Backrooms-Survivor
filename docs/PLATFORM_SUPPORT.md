@@ -21,6 +21,13 @@ Rules: no platform-named code directories or branches; no `if platform:` gamepla
 difference must be added to this table in the same change. Legacy LÖVE2D files in the repo root are the reference
 implementation of the same game and are not a platform target.
 
+## Android layout pass (Build 15 playtest feedback)
+- Stat bars hug the left edge: the HUD uses at most 20 logical px of the left display-cutout inset (buttons still use the full inset).
+- Touch minimap is a toggle: the MAP button sits left of ATTACK (well clear of it); default hidden, state saved in options (`minimap_on`).
+  Keyboard / gamepad keep the always-on minimap.
+- Utility buttons (BOMB, WPN, LAMP, BAT) sit on an arc around ATTACK with >= 8 px gaps (checked at 5 viewports, both hands).
+- Needs physical-device verification (cutout shape on the owner's phone, thumb reach).
+
 ## Android phone UI scale (owner playtest of Build 13)
 On a real mobile device the whole UI is drawn about **2x** larger (`ui.phone_boost()`: 2.0 on phones, easing to 1.25 on tablets by
 physical screen size; desktop, Windows, Linux and Steam Deck keep boost 1.0, enforced by a regression test). It multiplies Options >

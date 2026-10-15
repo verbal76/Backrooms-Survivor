@@ -257,12 +257,15 @@ func _process(delta: float) -> void:
 	_update_cursor()
 
 
+const HUD_LEFT_INSET_MAX := 20.0
+
+
 ## Keep the HUD inside display cutouts / system bars on phones (touch mode only).
 func _apply_safe_area() -> void:
 	var ins := Vector4.ZERO
 	if input and input.active_mode() == "touch":
 		ins = input.safe_insets()
-	hud.offset_left = ins.x
+	hud.offset_left = minf(ins.x, HUD_LEFT_INSET_MAX)      # the stat panel may use the cutout side: bars hug the left edge
 	hud.offset_top = ins.y
 	hud.offset_right = -ins.z
 	hud.offset_bottom = -ins.w

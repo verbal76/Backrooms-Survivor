@@ -27,6 +27,7 @@ func _init() -> void:
 	t_weapon_flip_stable()
 	await t_attack_input_and_direction()
 	await t_compact_hud()
+	await t_action_cluster_and_map()
 	t_no_manual_aim_and_tutorial()
 	await t_phone_ui()
 	await t_phone_menus()
@@ -1182,6 +1183,76 @@ func t_compact_hud() -> void:
 
 
 ## P. Manual aim is gone from controls, menus and every help text; the tutorial describes automatic targeting.
+func t_action_cluster_and_map() -> void:
+	var inp = g.input
+	var ui = g.ui
+	var saved_lh: bool = ui.options.touch_left_handed
+	var bad: Array[String] = []
+	for lh in [false, true]:
+		ui.options.touch_left_handed = lh
+		for view in [Vector2(1280, 580), Vector2(1589, 720), Vector2(1920, 886), Vector2(2400, 1080), Vector2(960, 720)]:
+			var lay: Dictionary = inp.touch_layout(view)
+			var atk := {}
+			var map := {}
+			for b in lay.buttons:
+				if b.action == "attack":
+					atk = b
+				elif b.action == "map":
+					map = b
+			if map.is_empty():
+				bad.append("no MAP button %dx%d" % [view.x, view.y])
+				continue
+			for i in lay.buttons.size():
+				var bi: Dictionary = lay.buttons[i]
+				if bi.pos.x - bi.r < 0.0 or bi.pos.x + bi.r > view.x or bi.pos.y - bi.r < 0.0 or bi.pos.y + bi.r > view.y:
+					bad.append("%s outside %dx%d" % [bi.action, view.x, view.y])
+				for j in range(i + 1, lay.buttons.size()):
+					var bj: Dictionary = lay.buttons[j]
+					if bi.action in ["use_water", "use_bandage", "use_food", "sprint", "pause"] and bj.action in ["use_water", "use_bandage", "use_food", "sprint", "pause"]:
+						continue
+					var gap: float = bi.pos.distance_to(bj.pos) - bi.r - bj.r
+					if gap < 8.0:
+						bad.append("%s/%s gap %.0f at %dx%d%s" % [bi.action, bj.action, gap, view.x, view.y, " lefty" if lh else ""])
+			var side := signf(atk.pos.x - map.pos.x)
+			if (side > 0.0) == lh:
+				bad.append("MAP is not on the inner side of ATTACK (lefty %s)" % lh)
+			var mgap: float = map.pos.distance_to(atk.pos) - map.r - atk.r
+			if mgap < 40.0 * inp.touch_scale() * 0.5:
+				bad.append("MAP too close to ATTACK (%.0f)" % mgap)
+	ui.options.touch_left_handed = saved_lh
+	_ok("action cluster: arc around ATTACK, every button apart, MAP on the inner side and well clear of ATTACK", bad.is_empty(), ", ".join(bad))
+
+	# MAP toggles the minimap; hidden by default
+	_ok("minimap is hidden by default on touch", GameOptions.new().minimap_on == false)
+	ui.options.minimap_on = false
+	g.set_state("playing")
+	_ready_player()
+	ui.options.tips_enabled = false
+	ui.tips.dismiss()
+	var lay2: Dictionary = inp.touch_layout()
+	var mp := Vector2.ZERO
+	for b in lay2.buttons:
+		if b.action == "map":
+			mp = b.pos
+	_tap(9, mp)
+	_tap(9, mp, false)
+	await _frames(2)
+	_ok("tapping MAP shows the minimap", ui.options.minimap_on)
+	_tap(9, mp)
+	_tap(9, mp, false)
+	await _frames(2)
+	_ok("tapping MAP again hides it", not ui.options.minimap_on)
+	_ok("MAP tap does not attack or move", not inp.fire and inp.move == Vector2.ZERO)
+
+	# the stat panel may use the cutout side (bars hug the left edge)
+	var keep_ins: Vector4 = inp.debug_insets
+	inp.debug_insets = Vector4(120, 0, 0, 0)
+	ui._apply_safe_area()
+	_ok("HUD left inset is capped so the stat bars sit at the left edge", ui.hud.offset_left <= 20.0, "offset %.0f" % ui.hud.offset_left)
+	inp.debug_insets = keep_ins
+	ui._apply_safe_area()
+
+
 func t_no_manual_aim_and_tutorial() -> void:
 	var T = load("res://scripts/ui/tutorial_data.gd")
 	var inp = g.input

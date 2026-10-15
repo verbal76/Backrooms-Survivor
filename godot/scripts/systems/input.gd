@@ -69,7 +69,7 @@ const PAD_NAMES := {0: "A", 1: "B", 2: "X", 3: "Y", 4: "View", 5: "Steam", 6: "M
 	15: "Share", 16: "R4", 17: "L4", 18: "R5", 19: "L5", 20: "Touchpad", 100: "LT", 101: "RT"}
 ## Touch button label per action ("" = no on-screen button).
 const TOUCH_LABELS := {"attack": "ATTACK", "sprint": "SPRINT", "bomb": "BOMB", "weapon_next": "WPN", "weapon_prev": "WPN",
-	"headlamp": "LAMP", "battery": "BAT", "use_water": "H2O", "use_bandage": "MED", "use_food": "EAT", "pause": "||"}
+	"headlamp": "LAMP", "battery": "BAT", "use_water": "H2O", "use_bandage": "MED", "use_food": "EAT", "pause": "||", "map": "MAP"}
 
 signal mode_changed(new_mode: String)
 signal binding_captured(device: String, action: String, message: String)
@@ -936,10 +936,16 @@ func touch_layout(view := Vector2.ZERO) -> Dictionary:
 	var buttons: Array = []
 	# right-hand cluster (mirrored when left-handed): big ATTACK in the corner, utility buttons arc above it
 	buttons.append(_tbtn(v, lh, R - 100.0 * k, B - 100.0 * k, 90.0 * k, "attack", Color(1, 0.25, 0.2)))
-	buttons.append(_tbtn(v, lh, R - 46.0 * k, B - 236.0 * k, 42.0 * k, "bomb", Color(1, 0.5, 0.1)))
-	buttons.append(_tbtn(v, lh, R - 144.0 * k, B - 214.0 * k, 40.0 * k, "weapon_next", Color(0.75, 0.75, 0.8)))
-	buttons.append(_tbtn(v, lh, R - 46.0 * k, B - 330.0 * k, 38.0 * k, "battery", Color(0.2, 1, 0.6)))
-	buttons.append(_tbtn(v, lh, R - 144.0 * k, B - 308.0 * k, 38.0 * k, "headlamp", Color(1, 0.95, 0.6)))
+	var ac := Vector2(R - 100.0 * k, B - 100.0 * k)        # ATTACK centre; the utility buttons sit on an arc around it
+	var ring := 158.0 * k                                    # clear of ATTACK (r 90) and of each other (>= 14 gap)
+	var arc := [["bomb", 42.0, Color(1, 0.5, 0.1), 80.0], ["weapon_next", 40.0, Color(0.75, 0.75, 0.8), 116.0],
+		["headlamp", 38.0, Color(1, 0.95, 0.6), 152.0], ["battery", 38.0, Color(0.2, 1, 0.6), 188.0]]
+	for a in arc:
+		var ang := deg_to_rad(a[3])
+		var off := Vector2(cos(ang), -sin(ang)) * ring
+		buttons.append(_tbtn(v, lh, ac.x + off.x, ac.y + off.y, a[1] * k, a[0], a[2]))
+	# MAP toggle: left of ATTACK, well apart from it and from the arc so a thumb on ATTACK never hits it
+	buttons.append(_tbtn(v, lh, R - 100.0 * k - 290.0 * k, B - 62.0 * k, 36.0 * k, "map", Color(0.9, 0.8, 0.3)))
 	# left-hand cluster: sprint toggle by the move stick, quick-use row above it
 	buttons.append(_tbtn(v, lh, L + 128.0 * k + stick_r + 56.0 * k, B - 60.0 * k, 40.0 * k, "sprint", Color(0.5, 0.8, 1)))
 	var qy := B - 98.0 * k - stick_r - 56.0 * k
@@ -1028,6 +1034,10 @@ func _handle_touch(event: InputEventScreenTouch) -> void:
 		if b.action == "attack":
 			_latch_fire()                         # a tap shorter than a frame / during hit-stop / cooldown is not lost
 			_btn_touch[event.index] = b.action
+		elif b.action == "map":
+			if game.ui != null:
+				game.ui.options.minimap_on = not game.ui.options.minimap_on
+				game.ui.options.save()
 		elif b.action == "sprint":
 			if _sprint_latched:
 				_sprint_latched = false
@@ -1119,14 +1129,15 @@ func _draw_touch() -> void:
 	for b in lay.buttons:
 		var is_sprint: bool = b.action == "sprint"
 		var sprint_on: bool = is_sprint and _sprint_latched
-		var pressed: bool = _btn_flash.has(b.action) or sprint_on
+		var map_on: bool = b.action == "map" and ui != null and ui.options.minimap_on
+		var pressed: bool = _btn_flash.has(b.action) or sprint_on or map_on
 		var c: Color = b.color
 		var on := touch_enabled(b.action)
 		var dim := 1.0 if on else 0.35
 		if not on:
 			c = Color(0.9, 0.3, 0.25) if is_sprint else Color(0.55, 0.55, 0.55)   # SPRINT without stamina reads red
-		var r: float = b.r * (0.92 if pressed and not sprint_on else 1.0)
-		if sprint_on:      # ON: solid lit button with a halo, unmistakable at a glance
+		var r: float = b.r * (0.92 if pressed and not (sprint_on or map_on) else 1.0)
+		if sprint_on or map_on:      # ON: solid lit button with a halo, unmistakable at a glance
 			_touch_ui.draw_circle(b.pos, r * 1.28, Color(c, minf(1.0, 0.20 * f)))
 			_touch_ui.draw_circle(b.pos, r, Color(c, minf(1.0, 0.85 * f)))
 			_touch_ui.draw_arc(b.pos, r, 0, TAU, 40, Color(1, 1, 1, minf(1.0, 0.95 * f)), 4.0)
@@ -1145,7 +1156,7 @@ func _draw_touch() -> void:
 			fs = maxi(10, int(fs * r * 1.7 / tw))
 			tw = font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		_touch_ui.draw_string(font, b.pos + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
-			Color(0.02, 0.06, 0.12, 1.0) if sprint_on else Color(1, 1, 1, minf(1.0, 0.95 * f * dim)))
+			Color(0.02, 0.06, 0.12, 1.0) if (sprint_on or map_on) else Color(1, 1, 1, minf(1.0, 0.95 * f * dim)))
 		# inventory badge
 		var count := -1
 		if p:

@@ -342,6 +342,8 @@ func _phone_rects(w: float) -> Dictionary:
 
 func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 	var phone: bool = ui.is_phone_ui() and mode == "touch"
+	if mode == "touch" and not ui.options.minimap_on:
+		return                                         # touch: hidden until the MAP button is toggled on
 	var s := MINI_SIZE
 	var mk := 1.0                                      # marker size factor: chests, portal, enemies and the player must read on a phone
 	var pos := Vector2(w - s - 14.0, h - s - 14.0)
