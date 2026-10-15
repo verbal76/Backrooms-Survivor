@@ -71,3 +71,11 @@ Rule: see "Single number sequence" below.
 Native/coordinated builds (`build-NN` tags) and OTA patches share ONE sequence: next = `max(OTA channel build, build-NN tags) + 1`
 (`tools/ci_guard.py sequence`). Because an installed build N ignores OTA patches numbered <= N, this also keeps OTA ordering valid.
 The ledger above is the starting point: next number is 13.
+
+## Build numbers and private builds
+- `destination=local_only` builds create no tag, so they do not consume a number: the next dispatch uses the same number again and
+  **supersedes** the private one. To keep them distinguishable the private artifact is named
+  `coordinated-release-assets-b<NN>-<sha7>` (build number + source SHA). Only `github_releases` (tag `build-NN`) consumes a number.
+- Every package contains `release_manifest.json` / `build-manifest.json` with the source SHA and build number; the APK, Windows
+  zip and Linux tarball are separate files (`... APK.apk`, `... EXE.zip`, `... Linux.tar.gz`) ready to be used as Steam depots
+  (see `tools/steampipe/`). Android signing: `docs/ANDROID_SIGNING.md`.

@@ -3,12 +3,11 @@ extends Node
 ##
 ## Public API (for other systems / the integrator):
 ##   game.ui.add_message(text, color := Color.WHITE, life := 3.0)   centre-screen message log (Lua addMessage)
-##   game.ui.options          GameOptions   music_volume, sfx_volume, brightness, headlamp_brightness, aim_assist...
+##   game.ui.options          GameOptions   music_volume, sfx_volume, brightness, headlamp_brightness...
 ##   game.ui.progression      Progression   tokens / upgrades / saves
 ##   game.ui.difficulty       int 1..4 (Easy, Normal, Getting Worse, Hell)
 ##   game.ui.run_mods         Dictionary    per-run numbers other systems must honour (see _build_run_mods)
 ##   game.ui.player_name      String
-##   game.ui.aim_assist_enabled   bool
 ##   game.ui.show_portal_prompt() / game.set_state("portal")   opens the escape/stay prompt
 ##   game.ui.portal_cooldown  float > 0 while a dismissed prompt must not reopen
 ##   signals: portal_choice(escape: bool), perk_chosen(id), run_started
@@ -68,9 +67,6 @@ var screen_name := ""
 var screens := {}
 var messages: Array = []
 var handle_item_hotkeys := true      # set false if another system consumes use_water/bandage/food
-var aim_assist_enabled: bool:
-	get:
-		return options.aim_assist and difficulty < 3
 
 var hud: Control
 var overlays: Control
@@ -159,17 +155,46 @@ func apply_options() -> void:
 	Quality.apply(game, options.quality)
 
 
+## Android phones: the UI is drawn about twice as large as on desktop (owner playtest: text was too small to read).
+## Applies only to a real mobile device (or `debug_phone` in tests); desktop, Steam Deck and Windows keep their size.
+const PHONE_BOOST := 2.0
+var debug_phone := false
+
+
+func is_phone_ui() -> bool:
+	return debug_phone or OS.has_feature("mobile")
+
+
+## Multiplier on top of Options > UI Scale: 2.0 on phones, easing down to 1.25 on tablets (bigger physical screens).
+func phone_boost() -> float:
+	if debug_phone:
+		return PHONE_BOOST
+	if not OS.has_feature("mobile"):
+		return 1.0
+	var win := DisplayServer.window_get_size()
+	var dpi := float(DisplayServer.screen_get_dpi())
+	if dpi < 80.0 or win.y <= 0:
+		return PHONE_BOOST
+	var short_in := float(mini(win.x, win.y)) / dpi
+	return clampf(remap(short_in, 3.4, 5.6, PHONE_BOOST, 1.25), 1.25, PHONE_BOOST)
+
+
 ## Scale factor for the HUD, overlays and tip cards (the menu pages scale themselves in UIScreen.apply_layout).
 func hud_scale() -> float:
 	var vp := get_viewport().get_visible_rect().size
-	return clampf(minf(options.ui_scale, vp.y / 460.0), 0.8, 1.6)
+	var boost := phone_boost()
+	var need_h := 460.0 if boost <= 1.001 else 340.0      # the phone HUD layout is more compact (minimap moves to the top)
+	var fit := vp.y / need_h
+	if boost > 1.001:
+		fit = minf(fit, vp.x / 640.0)                       # left panel + minimap + info panel side by side
+	return clampf(minf(options.ui_scale * boost, fit), 0.8, 2.2)
 
 
 func _layout_screens() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	for s in screens.values():
 		if s.visible:
-			s.apply_layout(options.ui_scale, vp)
+			s.apply_layout(options.ui_scale * phone_boost(), vp)
 
 
 func _notification(what: int) -> void:
@@ -232,12 +257,15 @@ func _process(delta: float) -> void:
 	_update_cursor()
 
 
+const HUD_LEFT_INSET_MAX := 20.0
+
+
 ## Keep the HUD inside display cutouts / system bars on phones (touch mode only).
 func _apply_safe_area() -> void:
 	var ins := Vector4.ZERO
 	if input and input.active_mode() == "touch":
 		ins = input.safe_insets()
-	hud.offset_left = ins.x
+	hud.offset_left = minf(ins.x, HUD_LEFT_INSET_MAX)      # the stat panel may use the cutout side: bars hug the left edge
 	hud.offset_top = ins.y
 	hud.offset_right = -ins.z
 	hud.offset_bottom = -ins.w
@@ -498,7 +526,6 @@ func _build_run_mods() -> void:
 		"sanity_drain": DIFF_SANITY[i], "hydration_drain": DIFF_HYDRATION[i], "sprint_cost": 1.0,
 		"rate_mod": 1.0, "lamp_capacity": 1.0, "start_ammo": 0, "start_bombs": 0,
 		"max_bombs": maxi(2, 6 - difficulty), "max_batteries": maxi(0, 4 - difficulty),
-		"aim_assist": aim_assist_enabled,
 	}
 	run_mods.clear()
 	run_mods.merge(d)

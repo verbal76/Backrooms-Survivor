@@ -76,14 +76,14 @@ tracked changes (one untracked `crow_sheet.png.import` was already committed on 
 ## Owner decision register R-1 .. R-6 (resolved 2026-10-12 for everything an agent may do)
 Original wording of each item is kept in the first line.
 
-**R-1 - "fast-forward `main` to a validated `dev` SHA (stale unguarded workflow on `main`)". RED.**
+**R-1 - RESOLVED 2026-10-12 (see Integration record). "fast-forward `main` to a validated `dev` SHA (stale unguarded workflow on `main`)". RED.**
 `main` = `33c8e64`, which still carries the old `dev-build.yml` (push trigger, `continue-on-error`, no SHA guard). `dev` = `222225a`;
 the PR #4 branch contains both and is 12 commits ahead of `dev`. Alternatives: (a) leave as is until release; (b) validate the PR
 branch, merge it into `dev`, then fast-forward `main` to that exact SHA; (c) merge PR #4 straight into `main` (its current base)
 and fast-forward `dev`. Consequences: no effect on saves, Android/Windows/Linux artifacts or OTA until a push to `dev` happens;
 Steam: none. Recommendation: (b), after the owner signs off. Needs the owner (protected branch). Action taken: none.
 
-**R-2 - "stop `dev-build.yml` auto-publishing the OTA channel on push to `dev`". RED.**
+**R-2 - RESOLVED 2026-10-12 (see Integration record). "stop `dev-build.yml` auto-publishing the OTA channel on push to `dev`". RED.**
 Every push to `dev` replaces the rolling `dev` prerelease and so what installed dev builds download. Alternatives: (a) keep;
 (b) replace the push trigger with a manual `workflow_dispatch`-only OTA publish; (c) keep automatic OTA but only from a manual
 release. Consequences: (b) removes the accidental-publish path (matches the master standard); installed players keep working
@@ -113,3 +113,16 @@ if unobtainable, replace with CC0 assets. Action: inventory and attribution list
 **R-6 - "physical-device testing (phone, Windows, Linux, Steam Deck)". RED (requires hardware and the owner).**
 Nothing has been run on real devices; all evidence is headless/software-rendered. Checklist: docs/STEAM_HARDWARE_CHECKLIST.md.
 Recommendation: one pass per device class before any public release. Action: none possible by an agent.
+
+## Integration record (R-1 / R-2 authorized by the owner, 2026-10-12)
+- R-2 implemented in `e33d7d9`: `dev-build.yml` is manual-only (`workflow_dispatch`), authorized by the dispatcher's repository role
+  (admin/maintain), one shared build/OTA number sequence (next = latest + 1; currently 13), source = live tip of `dev`, all gates
+  repeated inside the publish job (docs/UPDATES.md "Publishing architecture"). Enforced by `tools/workflow_rules.py` (policy_check) and
+  `tools/test_release_tools.py`.
+- Validation of exactly `e33d7d9`: PR validation run 38314022771 green (policy, tests, result; `full` skipped), plus local smoke test,
+  25/25 regression checks, 80 release-tool checks, actionlint, policy_check.
+- R-1 executed with non-forced fast-forwards of the validated SHA: `dev` `222225a` -> `e33d7d9`, then `main` `33c8e64` -> `e33d7d9`
+  (both ancestors of the candidate; no commits were discarded). No branch protection blocked either push. GitHub then marked PR #4 merged.
+- No workflow run started on either push (the new `dev-build.yml` has no push trigger); the `dev` prerelease is still "Dev build 12"
+  (`222225a`); no tag, release, OTA, artifact or store upload was created.
+- Still open: R-3 (OTA signature/rollback), R-4 (signing, Steam), R-5 (first hosted run, licences), R-6 (device testing).

@@ -22,7 +22,7 @@ const FIXTURE_POOL := 8
 const HEADLAMP_RADIUS := 14.0
 const HEADLAMP_CONE := 0.85
 const HEADLAMP_FORWARD_OFFSET := 0.18
-const BATTERY_DRAIN := 0.55
+const BATTERY_DRAIN := 0.33     # %/s: a full battery lasts about 5 minutes (was 0.55 = 3 minutes)
 const BATTERY_RECHARGE := 0.85
 const DIFFICULTY_AMBIENT := [0.3, 0.2, 0.1, 0.05]
 

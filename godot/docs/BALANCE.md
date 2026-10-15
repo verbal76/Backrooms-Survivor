@@ -126,3 +126,12 @@ Same bot (machete, kite), 2 seeds per difficulty, 1800 s cap, no script errors i
 Crows account for 5-25% of damage taken (up to 129 on one Getting Worse run), skin stealers remain the largest killer on the
 hard modes. Easy was not re-run to death (about 6 min of wall time per 30 sim-minutes); re-run
 `tools/run_balance.py --diffs 1 --seeds 1-4` before a balance-sensitive release.
+
+## Pacing tweak after the Build 13 phone playtest (owner request)
+| Constant | Before | After | Why |
+|---|---|---|---|
+| `lighting.gd` BATTERY_DRAIN | 0.55 %/s (about 3 min per battery) | 0.33 %/s (about 5 min) | the headlamp faded too quickly |
+| `player.gd` S.sprint_cost | 16 /s | 12 /s | sprint lasts about 8 s from full instead of 6 |
+| `player.gd` S.stamina_regen | 7 /s | 9 /s | back to a full bar in about 11 s instead of 14 |
+Not re-simulated with `balance_sim` yet; weapon stamina costs, enemies and hydration are unchanged. Tutorial text and tips were updated to match
+(and the old tip that said "4 per second" now agrees with the code). Minimap: every pickup and chaos orb is a dot in its own colour.

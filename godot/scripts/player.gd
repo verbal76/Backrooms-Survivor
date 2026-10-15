@@ -14,7 +14,7 @@ const PERK_EVERY_N_LEVELS := 2
 # Player.STATS
 const S := {
 	"hp": 100.0, "invuln_time": 1.0,
-	"stamina": 100.0, "stamina_regen": 7.0, "sprint_cost": 16.0,
+	"stamina": 100.0, "stamina_regen": 9.0, "sprint_cost": 12.0,
 	"sanity": 100.0, "sanity_drain": 0.25, "sanity_light_min": 0.2, "sanity_regen_mult": 4.0,
 	"hydration": 100.0, "hydration_drain": 0.5, "hydration_sprint": 1.5,
 	"base_speed": 3.5, "sprint_mult": 1.6, "accel": 18.0, "decel": 14.0,
@@ -37,6 +37,7 @@ var map: WorldMap
 var tile_pos := Vector2.ZERO
 var vel := Vector2.ZERO
 var angle := 0.0
+var snap_facing := false   # set by game.gd from input.facing_snap (touch / gamepad auto-targeting)
 var fx := 1.0          # facing vector (cos/sin of angle)
 var fy := 0.0
 
@@ -164,8 +165,11 @@ func step(dt: float, input_dir: Vector2, want_sprint: bool, aim_world: Vector2, 
 func aim_at(world_px: Vector2, dt: float) -> void:
 	var to := world_px / TILE - tile_pos
 	if to != Vector2.ZERO:
-		var diff := wrapf(to.angle() - angle, -PI, PI)
-		angle += diff * minf(1.0, 20.0 * dt)
+		if snap_facing:
+			angle = to.angle()       # automatic targeting: the body, weapon, swing and hit test turn at once and agree
+		else:
+			var diff := wrapf(to.angle() - angle, -PI, PI)
+			angle += diff * minf(1.0, 20.0 * dt)
 		fx = cos(angle)
 		fy = sin(angle)
 

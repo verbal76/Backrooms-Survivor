@@ -150,3 +150,7 @@ func _draw() -> void:
 	var fade_in := 1.0 - clampf(age / FADE_IN, 0.0, 1.0)
 	if fade_in > 0.0:
 		fill(Color(0, 0, 0, fade_in))
+
+
+func _on_bound() -> void:
+	design_min = Vector2(640, 340)        # phone landscape at 2x: verified by screenshot

@@ -2,11 +2,14 @@ extends Control
 ## In-game HUD (drawHud / drawMessages / minimap / crosshair / sanity + low-health screen effects).
 ## Pure screen-space drawing on a CanvasLayer; reads everything from game.player and the optional systems.
 
-const BAR_W := 236.0
-const BAR_H := 20.0
-const BAR_GAP := 5.0
-const FS := 14
+const BAR_W := 176.0
+const BAR_H := 16.0
+const BAR_GAP := 2.0
+const FS := 13
+const XP_H := 11.0
+const INFO_W := 150.0
 const MINI_SIZE := 124.0
+const PHONE_MINI_SIZE := 140.0
 
 var ui
 var game
@@ -99,7 +102,7 @@ func _bar(x: float, y: float, key: String, pct: float, col: Color, label: String
 		var pa := 0.35 + 0.35 * sin(_t * 9.0)
 		UITheme.panel(self, r.grow(1), Color(0, 0, 0, 0), Color(1, 0.2, 0.2, pa), 4, 2)
 	var ty := y + (BAR_H - UITheme.text_h(FS)) * 0.5 - 1
-	UITheme.text(self, label, x + 6, ty, FS, Color.WHITE)
+	UITheme.text(self, label, x + 5, ty, FS, Color.WHITE)
 	if value != "":
 		UITheme.text(self, value, x, ty, FS, Color(1, 1, 1, 0.9), HORIZONTAL_ALIGNMENT_RIGHT, BAR_W - 6)
 
@@ -118,10 +121,11 @@ func _draw() -> void:
 	var w := w0 / s
 	var h := h0 / s
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
-	_draw_left_panel(p, mode)
+	var lefty_phone: bool = ui.is_phone_ui() and mode == "touch" and game.input.opts().touch_left_handed
+	_draw_left_panel(p, mode, w - 204.0 if lefty_phone else 0.0)
 	if mode != "touch":
 		_draw_bottom_left(h, p)       # on touch the counts live on the buttons
-	_draw_right_panel(w, p)
+	_draw_right_panel(w, p, 172.0 - w if lefty_phone else 0.0)
 	_draw_effects(w)
 	_draw_minimap(w, h, p, mode)
 	_draw_banners(w, h, p)
@@ -136,22 +140,25 @@ func _draw() -> void:
 		_draw_intro(w0, h0)
 
 
-func _draw_left_panel(p, _m: String) -> void:
-	var x := 14.0
-	var y := 14.0
-	var rows := 6
-	var ph := rows * (BAR_H + BAR_GAP) + 34.0
-	UITheme.panel(self, Rect2(x - 8, y - 8, BAR_W + 16, ph), Color(0, 0, 0, 0.62), Color(0.9, 0.8, 0.2, 0.18), 6, 1)
+## Compact stats panel (Release-candidate pass: ~50% less area than the old 236 x 184 panel). Same colour-coded bars;
+## short labels, thinner bars, no padding to spare. The quick-item counts are drawn only where there are no
+## touch buttons to carry them (keyboard / gamepad).
+func _draw_left_panel(p, m: String, ox := 0.0) -> void:
+	var x := 14.0 + ox
+	var y := 12.0
+	var touch := m == "touch"
+	var ph := stats_panel_height(touch)
+	UITheme.panel(self, Rect2(x - 6, y - 6, BAR_W + 12, ph), Color(0, 0, 0, 0.55), Color(0.9, 0.8, 0.2, 0.14), 5, 1)
 	var sx := 0.0
 	if _shake > 0.0:
 		sx = sin(_shake * 90.0) * 4.0 * (_shake / 0.35)
 	var hp: float = p.hp / maxf(p.max_hp, 1.0)
-	_bar(x + sx, y, "hp", hp, Color(1.0 - hp * 0.8, 0.15 + hp * 0.75, 0.1), "HP", "%d / %d" % [int(p.hp), int(p.max_hp)], hp < 0.3)
+	_bar(x + sx, y, "hp", hp, Color(1.0 - hp * 0.8, 0.15 + hp * 0.75, 0.1), "HP", "%d/%d" % [int(p.hp), int(p.max_hp)], hp < 0.3)
 	y += BAR_H + BAR_GAP
-	_bar(x, y, "st", p.stamina / maxf(p.max_stamina, 1.0), Color(0.2, 0.4, 0.9), "STAMINA", "%d" % int(p.stamina), (p.stamina < 8.0 and p.sprinting) or (game.input != null and game.input.refused_t > 0.0))
+	_bar(x, y, "st", p.stamina / maxf(p.max_stamina, 1.0), Color(0.2, 0.4, 0.9), "STA", "%d" % int(p.stamina), (p.stamina < 8.0 and p.sprinting) or (game.input != null and game.input.refused_t > 0.0))
 	y += BAR_H + BAR_GAP
 	var sn: float = p.sanity / maxf(p.max_sanity, 1.0)
-	_bar(x, y, "sn", sn, Color(0.6, 0.2, 0.8), "SANITY", "%d" % int(p.sanity), sn < 0.25)
+	_bar(x, y, "sn", sn, Color(0.6, 0.2, 0.8), "SAN", "%d" % int(p.sanity), sn < 0.25)
 	y += BAR_H + BAR_GAP
 	var hy: float = p.hydration / maxf(p.max_hydration, 1.0)
 	_bar(x, y, "hy", hy, Color(0.2, 0.7, 0.9), "H2O", "%d" % int(p.hydration), hy <= 0.0)
@@ -159,17 +166,19 @@ func _draw_left_panel(p, _m: String) -> void:
 	var bat: Dictionary = ui._battery()
 	var bp: float = bat.pct
 	var bcol := Color(0.2, 1, 0.3) if bp > 0.3 else Color(1, bp * 3.0, 0.3)
-	_bar(x, y, "bt", bp, bcol, "LAMP %s" % ("ON" if bat.on else "OFF"), "%d%%" % int(bp * 100.0), bp <= 0.0 and bat.on)
+	_bar(x, y, "bt", bp, bcol, "LAMP" if bat.on else "LAMP OFF", "%d%%" % int(bp * 100.0), bp <= 0.0 and bat.on)
 	y += BAR_H + BAR_GAP
-	# XP bar with level label
+	# XP bar with the level label
 	var xp_pct: float = float(p.xp) / maxf(float(p.xp_need), 1.0)
 	var xv := _sm("xp", xp_pct, 8.0)
-	var r := Rect2(x, y, BAR_W, BAR_H)
+	var r := Rect2(x, y, BAR_W, XP_H)
 	UITheme.bar(self, r, xv, Color(0.9, 0.7, 0.1))
 	if _pop.level > 0.0:
-		UITheme.panel(self, r.grow(2.0 * _pop.level), Color(1, 0.9, 0.3, 0.4 * _pop.level), Color(1, 0.9, 0.3, _pop.level), 5, 2)
-	UITheme.text(self, "LV %d" % p.level, x, y + (BAR_H - UITheme.text_h(FS)) * 0.5 - 1, FS, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, BAR_W)
-	y += BAR_H + BAR_GAP + 3.0
+		UITheme.panel(self, r.grow(2.0 * _pop.level), Color(1, 0.9, 0.3, 0.4 * _pop.level), Color(1, 0.9, 0.3, _pop.level), 4, 2)
+	UITheme.text(self, "LV %d" % p.level, x, y + (XP_H - UITheme.text_h(UITheme.MIN_FS)) * 0.5 - 1, UITheme.MIN_FS, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, BAR_W)
+	y += XP_H + BAR_GAP + 3.0
+	if touch:
+		return
 	# quick items: key / button names follow the (rebindable) bindings of the active scheme; 0 left = dimmed
 	var inp: GameInput = game.input
 	var keys := ["", "", ""]
@@ -187,14 +196,18 @@ func _draw_left_panel(p, _m: String) -> void:
 	for q in qs:
 		qtotal += UITheme.text_w(q[0], FS)
 	var qfs := FS
-	var qgap := 12.0
+	var qgap := 10.0
 	if qtotal + qgap * 2.0 > BAR_W:
 		qfs = UITheme.MIN_FS
-		qgap = 8.0
+		qgap = 6.0
 	var qx := x
 	for q in qs:
 		var qc: Color = q[2] if q[1] > 0 else Color(0.45, 0.45, 0.45)
 		qx += UITheme.text(self, q[0], qx, y, qfs, qc) + qgap
+
+
+static func stats_panel_height(touch: bool) -> float:
+	return 5.0 * (BAR_H + BAR_GAP) + XP_H + 6.0 + (0.0 if touch else 20.0) + 6.0
 
 
 func _draw_bottom_left(h: float, p) -> void:
@@ -204,31 +217,38 @@ func _draw_bottom_left(h: float, p) -> void:
 	UITheme.text(self, "BAT: %d" % p.batteries, r.position.x + 98, r.position.y + 8, 15, Color(0.2, 1, 0.6) if p.batteries > 0 else Color(0.4, 0.5, 0.45))
 
 
-func _draw_right_panel(w: float, p) -> void:
-	var pw := 176.0
-	var x := w - pw - 12.0
-	var y := 12.0
-	var r := Rect2(x - 8, y - 4, pw + 12, 112)
-	UITheme.panel(self, r, Color(0, 0, 0, 0.62), Color(0.9, 0.8, 0.2, 0.18), 6, 1)
-	UITheme.text(self, "Day %d  %s" % [game.day, UITheme.fmt_time(game.run_time)], x, y, 15, Color(0.9, 0.8, 0.2))
+## Compact combat panel (about 45% less area than the old 188 x 112 one): day/time, weapon + ammo/melee, kills + streak,
+## noise + difficulty. Bombs are shown here only where there is no BOMB button badge (keyboard / gamepad).
+func _draw_right_panel(w: float, p, ox := 0.0) -> void:
+	var touch := _mode == "touch"
+	var x := w - INFO_W - 8.0 + ox
+	var y := 10.0
+	var ph := info_panel_height(touch)
+	UITheme.panel(self, Rect2(x - 6, y - 4, INFO_W + 8, ph), Color(0, 0, 0, 0.55), Color(0.9, 0.8, 0.2, 0.14), 5, 1)
+	var iw := INFO_W - 4.0
+	UITheme.text(self, "Day %d  %s" % [game.day, UITheme.fmt_time(game.run_time)], x, y, 14, Color(0.9, 0.8, 0.2))
 	var wep: Dictionary = ui.weapon_info()
 	var wcol := UITheme.color_of(wep.get("color", Color.WHITE))
 	var why: String = ui.attack_state()
 	if why != "":
 		wcol = wcol.lerp(Color(0.4, 0.4, 0.4), 0.7)          # can't attack right now: dim the weapon
 	var wpop: float = _pop.weapon
-	var wfs := 15 + int(wpop * 12.0)
-	UITheme.text(self, String(wep.get("name", "?")).to_upper(), x, y + 20 - wpop * 4.0, wfs, wcol)
+	var wfs := 14 + int(wpop * 10.0)
+	UITheme.text(self, String(wep.get("name", "?")).to_upper(), x, y + 17 - wpop * 3.0, wfs, wcol)
+	var tag := "MELEE"
+	var tag_col := Color(0.6, 0.6, 0.6)
 	if why == "stamina":
-		UITheme.text(self, "NO STAMINA", x, y + 40, FS, Color(1, 0.5, 0.2, 0.7 + 0.3 * sin(_t * 12.0)))
+		tag = "NO STAMINA"
+		tag_col = Color(1, 0.5, 0.2, 0.7 + 0.3 * sin(_t * 12.0))
 	elif why == "ammo":
-		UITheme.text(self, "NO AMMO", x, y + 40, FS, Color(1, 0.3, 0.2, 0.7 + 0.3 * sin(_t * 12.0)))
+		tag = "NO AMMO"
+		tag_col = Color(1, 0.3, 0.2, 0.7 + 0.3 * sin(_t * 12.0))
 	elif wep.get("type", "melee") == "ranged":
-		UITheme.text(self, "AMMO: %d" % ui.ammo(), x, y + 40, FS, Color(0.9, 0.7, 0.1))
-	else:
-		UITheme.text(self, "MELEE", x, y + 40, FS, Color(0.6, 0.6, 0.6))
+		tag = "AMMO %d" % ui.ammo()
+		tag_col = Color(0.9, 0.7, 0.1)
+	UITheme.text(self, tag, x, y + 17, FS, tag_col, HORIZONTAL_ALIGNMENT_RIGHT, iw)
 	var kp: float = _pop.kill
-	UITheme.text(self, "Kills %d" % game.kills, x, y + 56 - kp * 3.0, FS + int(kp * 8.0), Color(0.75, 0.75, 0.75).lerp(Color.WHITE, kp * 2.0))
+	UITheme.text(self, "Kills %d" % game.kills, x, y + 34 - kp * 3.0, FS + int(kp * 6.0), Color(0.75, 0.75, 0.75).lerp(Color.WHITE, kp * 2.0))
 	if p.current_streak >= 3:
 		var mult: float = p.get_streak_multiplier()
 		var txt := "x%d" % p.current_streak
@@ -238,48 +258,106 @@ func _draw_right_panel(w: float, p) -> void:
 		if p.streak_display_timer > 0.0:
 			var fl := sin(_t * 10.0) * 0.3 + 0.7
 			col = Color(1, 0.5 * fl, 0.1)
-		UITheme.text(self, txt, x + 96, y + 56, FS + (3 if p.streak_display_timer > 0.0 else 0), col)
-	# noise meter
+		UITheme.text(self, txt, x, y + 34, FS + (2 if p.streak_display_timer > 0.0 else 0), col, HORIZONTAL_ALIGNMENT_RIGHT, iw)
+	# noise meter (no label: the bar is self-explanatory next to the difficulty tag) + difficulty
 	var nz := clampf(p.noise / 100.0, 0.0, 1.0)
-	UITheme.panel(self, Rect2(x, y + 78, 78, 9), Color(0.15, 0.15, 0.15, 0.9), Color(0, 0, 0, 0.5), 3, 1)
+	var ny := y + 54.0
+	UITheme.panel(self, Rect2(x, ny, 64, 7), Color(0.15, 0.15, 0.15, 0.9), Color(0, 0, 0, 0.5), 3, 1)
 	if nz > 0.0:
-		UITheme.panel(self, Rect2(x, y + 78, maxf(3.0, 78 * nz), 9), Color(nz, 1.0 - nz * 0.8, 0.1), Color(0, 0, 0, 0), 3)
-	UITheme.text(self, "NOISE", x + 84, y + 74, 12, Color(0.7, 0.7, 0.7))
-	UITheme.text(self, "BOMB x%d" % ui._bomb_count(), x, y + 92, FS, Color(1, 0.5, 0.1) if ui._bomb_count() > 0 else Color(0.5, 0.4, 0.35))
-	UITheme.text(self, UITheme.DIFF_NAMES[ui.difficulty - 1], x + 80, y + 92, FS, UITheme.DIFF_COLORS[ui.difficulty - 1])
+		UITheme.panel(self, Rect2(x, ny, maxf(3.0, 64 * nz), 7), Color(nz, 1.0 - nz * 0.8, 0.1), Color(0, 0, 0, 0), 3)
+	UITheme.text(self, UITheme.DIFF_NAMES[ui.difficulty - 1], x, y + 48, FS, UITheme.DIFF_COLORS[ui.difficulty - 1], HORIZONTAL_ALIGNMENT_RIGHT, iw)
+	if not touch:
+		UITheme.text(self, "BOMB x%d" % ui._bomb_count(), x, y + 66, FS, Color(1, 0.5, 0.1) if ui._bomb_count() > 0 else Color(0.5, 0.4, 0.35))
+
+
+static func info_panel_height(touch: bool) -> float:
+	return (68.0 if touch else 86.0)
 
 
 func _draw_effects(w: float) -> void:
 	var fx: Array = ui._effects()
 	if fx.is_empty():
 		return
-	var ex := w - 188.0
-	var ey := 134.0
-	UITheme.panel(self, Rect2(ex, ey, 176, fx.size() * 18 + 8), Color(0, 0, 0, 0.62), Color(0, 0, 0, 0), 5)
+	var ex := w - 160.0
+	var ey := 96.0
+	if ui.is_phone_ui() and _mode == "touch":
+		var mr: Rect2 = _phone_rects(w).mini
+		ex = mr.end.x - 150.0                          # under the minimap, right-aligned to it
+		ey = mr.end.y + 8.0
+	UITheme.panel(self, Rect2(ex, ey, 150, fx.size() * 16 + 6), Color(0, 0, 0, 0.5), Color(0, 0, 0, 0), 4)
 	for i in fx.size():
 		var e = fx[i]
 		var good: bool = e.get("good", e.get("is_good", true))
 		var c := Color(0.3, 1, 0.3) if good else Color(1, 0.3, 0.3)
 		var rem: float = float(e.get("remaining", 0.0))
 		var pct := minf(1.0, rem / 30.0)
-		var y := ey + 6 + i * 18
-		draw_rect(Rect2(ex + 4, y, 100, 12), c * 0.3)
-		draw_rect(Rect2(ex + 4, y, 100 * pct, 12), Color(c, 0.7))
+		var y := ey + 4 + i * 16
+		draw_rect(Rect2(ex + 4, y, 96, 12), c * 0.3)
+		draw_rect(Rect2(ex + 4, y, 96 * pct, 12), Color(c, 0.7))
 		UITheme.text(self, str(e.get("text", "")), ex + 8, y - 2, 12, Color.WHITE)
-		UITheme.text(self, "%ds" % int(rem), ex + 110, y - 2, 12, Color(0.7, 0.7, 0.7))
+		UITheme.text(self, "%ds" % int(rem), ex + 106, y - 2, 12, Color(0.7, 0.7, 0.7))
 		if rem < 5.0 and sin(_t * 8.0) > 0.0:
-			draw_rect(Rect2(ex + 4, y, 100, 12), Color(1, 1, 0, 0.3))
+			draw_rect(Rect2(ex + 4, y, 96, 12), Color(1, 1, 0, 0.3))
+
+
+## Phone HUD geometry in HUD canvas units (before the UI scale): stats panel, info panel and the minimap between them.
+## Left-handed play mirrors the two panels (the mirrored button cluster would otherwise sit under the stats panel).
+## `pause` = the touch pause button (x centre, radius) in the same units, so the minimap never covers it.
+## One source of truth for the drawing code and for the overlap test in tools/regression_tests.gd.
+static func phone_rects(w: float, left_handed := false, pause_x := -1.0, pause_r := 0.0) -> Dictionary:
+	var stats := Rect2(8.0, 6.0, BAR_W + 12.0, stats_panel_height(true))
+	var info := Rect2(w - INFO_W - 14.0, 6.0, INFO_W + 8.0, info_panel_height(true))
+	if left_handed:
+		stats.position.x = w - 8.0 - stats.size.x
+		info.position.x = 8.0
+	var span_l := (info.end.x if left_handed else stats.end.x) + 8.0
+	var span_r := (stats.position.x if left_handed else info.position.x) - 8.0
+	var x0 := span_l
+	var x1 := span_r
+	if pause_x >= 0.0:
+		var left_free := (pause_x - pause_r - 6.0) - span_l
+		var right_free := span_r - (pause_x + pause_r + 6.0)
+		if right_free >= left_free:
+			x0 = pause_x + pause_r + 6.0
+		else:
+			x1 = pause_x - pause_r - 6.0
+	var ms := clampf(x1 - x0 - 6.0, 90.0, PHONE_MINI_SIZE)
+	var mini := Rect2(Vector2(x0 + 3.0 + maxf(0.0, (x1 - x0 - 6.0 - ms) * 0.5), 12.0), Vector2(ms, ms))
+	return {"stats": stats, "mini": mini.grow(3.0), "info": info, "mini_size": ms}
+
+
+## Android phone HUD: the minimap and effect list live in the top strip between the pause button and the info panel
+## (the corners below are taken by the sticks and buttons). Returns the minimap rect origin.
+func _phone_rects(w: float) -> Dictionary:
+	var lay: Dictionary = game.input.touch_layout()
+	var s: float = ui.hud_scale()
+	var px := -1.0
+	var pr := 0.0
+	for b in lay.buttons:
+		if b.action == "pause":
+			px = b.pos.x / s
+			pr = b.r / s
+	return phone_rects(w, game.input.opts().touch_left_handed, px, pr)
 
 
 func _draw_minimap(w: float, h: float, p, mode: String) -> void:
+	var phone: bool = ui.is_phone_ui() and mode == "touch"
+	if mode == "touch" and not ui.options.minimap_on:
+		return                                         # touch: hidden until the MAP button is toggled on
 	var s := MINI_SIZE
+	var mk := 1.0                                      # marker size factor: chests, portal, enemies and the player must read on a phone
 	var pos := Vector2(w - s - 14.0, h - s - 14.0)
-	if mode == "touch":
+	if phone:
+		var mr: Rect2 = _phone_rects(w).mini.grow(-3.0)
+		s = mr.size.x
+		pos = mr.position
+		mk = 1.5
+	elif mode == "touch":
 		pos = Vector2(14.0, 232.0)
 		if game.input.opts().touch_left_handed:
 			pos = Vector2(w - s - 14.0, 150.0)     # the mirrored button cluster occupies the left edge
 	var r := Rect2(pos, Vector2(s, s))
-	UITheme.panel(self, r.grow(3), Color(0, 0, 0, 0.8), Color(0.4, 0.35, 0.2, 0.8), 5, 1)
+	UITheme.panel(self, r.grow(2), Color(0, 0, 0, 0.7), Color(0.4, 0.35, 0.2, 0.45), 4, 1)
 	_mini.draw(self, r, game.player.tile_pos, 0.95)
 	var center: Vector2 = p.tile_pos
 	var scale_px := s / float(_mini.half * 2)
@@ -291,8 +369,8 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 		var cp := _to_mini(r, center, chest.pos, scale_px)
 		if clip_r.has_point(cp):
 			var pulse := 0.5 + 0.5 * sin(_t * 3.0)
-			draw_circle(cp, 7.0 + pulse * 2.0, Color(0.9, 0.7, 0.1, 0.18 + 0.12 * pulse))
-			draw_circle(cp, 3.0, Color(1, 0.85, 0.2, 0.95))
+			draw_circle(cp, (7.0 + pulse * 2.0) * mk, Color(0.9, 0.7, 0.1, 0.18 + 0.12 * pulse))
+			draw_circle(cp, 3.0 * mk, Color(1, 0.85, 0.2, 0.95))
 	# portal marker
 	var portal: Dictionary = ui._portal()
 	if not portal.is_empty() and portal.active:
@@ -300,8 +378,8 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 		var col := Color(0.2, 1, 0.7)
 		if clip_r.has_point(pp):
 			var pulse2 := 0.5 + 0.5 * sin(_t * 4.0)
-			draw_arc(pp, 5.0 + pulse2 * 3.0, 0, TAU, 20, Color(col, 0.8), 2.0)
-			draw_circle(pp, 3.0, col)
+			draw_arc(pp, (5.0 + pulse2 * 3.0) * mk, 0, TAU, 20, Color(col, 0.8), 2.0)
+			draw_circle(pp, 3.0 * mk, col)
 		else:
 			var dir := (pp - r.get_center()).normalized()
 			var edge := r.get_center() + dir * (s * 0.5 - 6.0)
@@ -311,17 +389,19 @@ func _draw_minimap(w: float, h: float, p, mode: String) -> void:
 	for m in ui._map_markers():
 		var mp := _to_mini(r, center, m.pos, scale_px)
 		if clip_r.has_point(mp):
-			draw_rect(Rect2(mp - Vector2(1, 1), Vector2(2.5, 2.5)), UITheme.color_of(m.get("color", Color.WHITE)))
+			var dot := Rect2(mp - Vector2(1.6, 1.6) * mk, Vector2(3.2, 3.2) * mk)
+			draw_rect(dot.grow(0.9 * mk), Color(0, 0, 0, 0.75))               # dark rim so a dot reads on any floor
+			draw_rect(dot, UITheme.color_of(m.get("color", Color.WHITE)))
 	if ui.difficulty <= 2 and game.enemies and game.enemies.has_method("get_enemies"):
 		for e in game.enemies.get_enemies():
 			var ep := _to_mini(r, center, e.tile_pos, scale_px)
 			if clip_r.has_point(ep):
 				var ec: Color = e.color if "color" in e and e.color is Color else Color(1, 0.3, 0.25)
-				draw_rect(Rect2(ep - Vector2(1, 1), Vector2(2.5, 2.5)), ec)
+				draw_rect(Rect2(ep - Vector2(1, 1) * mk, Vector2(2.5, 2.5) * mk), ec)
 	# player marker + facing
 	var pc := r.get_center()
-	draw_line(pc, pc + Vector2(p.fx, p.fy) * 9.0, Color(1, 0.95, 0.7, 0.8), 1.5)
-	draw_circle(pc, 3.0, Color(0.9, 0.8, 0.2))
+	draw_line(pc, pc + Vector2(p.fx, p.fy) * 9.0 * mk, Color(1, 0.95, 0.7, 0.8), 1.5 * mk)
+	draw_circle(pc, 3.0 * mk, Color(0.9, 0.8, 0.2))
 
 
 func _to_mini(r: Rect2, center: Vector2, tile: Vector2, scale_px: float) -> Vector2:
@@ -338,11 +418,11 @@ func _draw_banners(w: float, h: float, p) -> void:
 
 
 func _draw_messages(w: float, h: float) -> void:
-	var y := h * 0.5 - 20.0
+	var y := h * 0.66          # below the character (it sits at the screen centre): notifications never cover the action
 	var n: int = ui.messages.size()
 	var shown := 0
 	var i := n - 1
-	while i >= 0 and shown < 6:
+	while i >= 0 and shown < 4:
 		var m: Dictionary = ui.messages[i]
 		var fade := clampf((m.life - m.age) / 1.0, 0.0, 1.0)
 		var enter := clampf(m.age / 0.15, 0.0, 1.0)

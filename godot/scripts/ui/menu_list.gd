@@ -13,6 +13,7 @@ var slider_w := 170.0
 var rects: Array = []
 var hl_y := -1.0               # animated highlight centre
 var enter_t := 0.0             # seconds since the list was shown (row entrance animation)
+var compact := false           # phone short canvas: rows are 14% tighter
 var max_rows := 0              # 0 = show every row; otherwise the list scrolls to keep the selection visible
 var scroll := 0
 var drag_idx := -1
@@ -20,6 +21,11 @@ var pop := {}                  # item index -> pressed-flash seconds
 var sfx: Callable = Callable()  # called with "move" | "select" | "adjust"
 var _cx := 0.0
 var _top := 0.0
+var _press_y := 0.0            # touch drag-scroll of lists longer than the screen
+var _press_x := 0.0
+var _press_scroll := 0
+var _pending := -1             # row tapped, activated on release unless the finger scrolled the list
+var _scrolling := false
 
 
 # ---- building ---------------------------------------------------------------------------
@@ -53,6 +59,14 @@ func add_toggle(label: String, getter: Callable, toggle: Callable) -> Dictionary
 	var it := {"kind": "toggle", "label": label, "get": getter, "adjust": toggle}
 	items.append(it)
 	return it
+
+
+func _rh() -> float:
+	return row_h * (0.86 if compact else 1.0)
+
+
+func _scrolls() -> bool:
+	return max_rows > 0 and items.size() > max_rows
 
 
 func _enabled(it: Dictionary) -> bool:
@@ -119,6 +133,13 @@ func pointer_down(p: Vector2) -> bool:
 		var it: Dictionary = items[i]
 		if not _enabled(it):
 			return true
+		_press_y = p.y
+		_press_x = p.x
+		_press_scroll = scroll
+		_scrolling = false
+		if _scrolls() and it.kind != "slider":
+			_pending = i                      # long list: a drag scrolls it, a tap activates on release
+			return true
 		match it.kind:
 			"slider":
 				var sx := _cx - 16.0
@@ -138,10 +159,30 @@ func pointer_down(p: Vector2) -> bool:
 func pointer_drag(p: Vector2) -> void:
 	if drag_idx >= 0:
 		_set_from_x(drag_idx, p.x)
+		return
+	if _scrolls() and (_pending >= 0 or _scrolling):
+		var dy := p.y - _press_y
+		if absf(dy) > 10.0 or _scrolling:
+			_scrolling = true
+			_pending = -1
+			var vis := shown_rows()
+			scroll = clampi(_press_scroll - int(round(dy / _rh())), 0, maxi(0, items.size() - vis))
+			sel = clampi(sel, scroll, scroll + vis - 1)
 
 
 func pointer_up() -> void:
 	drag_idx = -1
+	if _pending >= 0 and not _scrolling and _pending < items.size():
+		var i := _pending
+		_pending = -1
+		sel = i
+		var it: Dictionary = items[i]
+		if it.kind == "button":
+			activate()
+		else:
+			adjust(1 if _press_x >= _cx else -1)
+	_pending = -1
+	_scrolling = false
 
 
 func _set_from_x(i: int, x: float) -> void:
@@ -163,12 +204,12 @@ func shown_rows() -> int:
 
 
 func total_height() -> float:
-	return shown_rows() * row_h
+	return shown_rows() * _rh()
 
 
 ## How many rows fit into `avail` px (never fewer than 3).
 func rows_for(avail: float) -> int:
-	return clampi(int(avail / row_h), 3, maxi(3, items.size()))
+	return clampi(int(avail / _rh()), 3, maxi(3, items.size()))
 
 
 func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
@@ -186,13 +227,13 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 	if sel >= scroll + vis:
 		scroll = sel - vis + 1
 	scroll = clampi(scroll, 0, maxi(0, items.size() - vis))
-	var target := top + (sel - scroll) * row_h + row_h * 0.5 - 2
+	var target := top + (sel - scroll) * _rh() + _rh() * 0.5 - 2
 	hl_y = target if hl_y < 0.0 else lerpf(hl_y, target, minf(1.0, dt * 22.0))
 
 	# animated selection bar sits behind the rows
 	if not items.is_empty():
 		var pulse := 0.5 + 0.5 * sin(t * 4.0)
-		var br := Rect2(cx - half_w, hl_y - row_h * 0.5 + 2, half_w * 2, row_h - 4)
+		var br := Rect2(cx - half_w, hl_y - _rh() * 0.5 + 2, half_w * 2, _rh() - 4)
 		UITheme.panel(ci, br, Color(0.4, 0.35, 0.15, 0.42 + pulse * 0.08), Color(1, 0.9, 0.3, 0.35 + pulse * 0.2), 5, 1)
 		# chevrons
 		var cxl := br.position.x + 10 + sin(t * 6.0) * 2.0
@@ -209,8 +250,8 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 		var delay := (i - scroll) * 0.04
 		var a := clampf((enter_t - delay) / 0.22, 0.0, 1.0)
 		var slide := (1.0 - a) * 24.0
-		var y := top + (i - scroll) * row_h - 1 + 0.0
-		var row := Rect2(cx - half_w, y, half_w * 2, row_h - 4)
+		var y := top + (i - scroll) * _rh() - 1 + 0.0
+		var row := Rect2(cx - half_w, y, half_w * 2, _rh() - 4)
 		rects.append(row)
 		var is_sel := i == sel
 		var enabled := _enabled(it)
@@ -220,7 +261,7 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 		if not enabled:
 			base = Color(0.4, 0.4, 0.4)
 		base.a = a
-		var ty := y + (row_h - 4 - UITheme.text_h(font_size, UITheme.title_font())) * 0.5 + lift
+		var ty := y + (_rh() - 4 - UITheme.text_h(font_size, UITheme.title_font())) * 0.5 + lift
 		var ox := slide + (pf * 3.0)
 		match it.kind:
 			"button":
@@ -237,13 +278,13 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 			"slider":
 				UITheme.head(ci, it.label, cx - half_w + 12 + ox, ty, font_size, base, HORIZONTAL_ALIGNMENT_RIGHT, half_w - 12 - 36 + 12)
 				var v: float = it.get.call()
-				var sr := Rect2(cx - 16 + ox, y, slider_w, row_h - 4)
+				var sr := Rect2(cx - 16 + ox, y, slider_w, _rh() - 4)
 				UITheme.slider(ci, sr, v, is_sel, it.min, it.max)
 				var pct := int(round(inverse_lerp(it.min, it.max, v) * 100.0))
 				var vtxt := "%d%%" % pct
 				if it.has("fmt"):
 					vtxt = it.fmt.call(v)
-				UITheme.text(ci, vtxt, cx - 16 + slider_w + 18 + ox, y + (row_h - 4 - 14) * 0.5 - 1, 14, Color(1, 1, 1, a))
+				UITheme.text(ci, vtxt, cx - 16 + slider_w + 18 + ox, y + (_rh() - 4 - 14) * 0.5 - 1, 14, Color(1, 1, 1, a))
 			"choice", "toggle":
 				UITheme.head(ci, it.label, cx - half_w + 12 + ox, ty, font_size, base, HORIZONTAL_ALIGNMENT_RIGHT, half_w - 12 - 36 + 12)
 				var txt := ""
@@ -264,4 +305,4 @@ func draw(ci: CanvasItem, cx: float, top: float, dt: float, t: float) -> void:
 	if scroll > 0:
 		UITheme.text(ci, "^  more", cx - half_w, top - 18.0, 12, UITheme.GOLD_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER, half_w * 2)
 	if scroll + vis < items.size():
-		UITheme.text(ci, "v  more", cx - half_w, top + vis * row_h, 12, UITheme.GOLD_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER, half_w * 2)
+		UITheme.text(ci, "v  more", cx - half_w, top + vis * _rh(), 12, UITheme.GOLD_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER, half_w * 2)

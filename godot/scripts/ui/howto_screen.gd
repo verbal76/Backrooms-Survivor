@@ -14,13 +14,20 @@ var _next_rect := Rect2()
 var _back_rect := Rect2()
 var _chip_rect := Rect2()
 var _down_x := -1.0
+var _down_y := 0.0
+var _scroll := 0.0                  # compact (phone) layout: the page body scrolls by dragging
+var _scroll_max := 0.0
+var _dragging_y := false
+var _scroll_start := 0.0
 
 
 func _on_open(arg) -> void:
 	return_to = arg if arg is String else "title"
 	page = 0
 	view_mode = ""
+	_scroll = 0.0
 	input_delay = 0.2
+	design_min = Vector2(640, 340)        # phone landscape at 2x: ~800 x 360 canvas
 
 
 ## Schemes the player can flip through. A controller player only ever sees controller wording.
@@ -40,6 +47,7 @@ func _count() -> int:
 
 func _go(d: int) -> void:
 	page = posmod(page + d, _count())
+	_scroll = 0.0
 
 
 func _back() -> void:
@@ -60,6 +68,9 @@ func handle_input(inp: GameInput, _d: float) -> void:
 
 func on_pointer_down(p: Vector2) -> void:
 	_down_x = p.x
+	_down_y = p.y
+	_dragging_y = false
+	_scroll_start = _scroll
 	if _back_rect.has_point(p):
 		_back()
 		_down_x = -1.0
@@ -81,10 +92,19 @@ func on_pointer_down(p: Vector2) -> void:
 				return
 
 
+func on_pointer_drag(p: Vector2) -> void:
+	if _down_x < 0.0 or _scroll_max <= 0.0:
+		return
+	if _dragging_y or (absf(p.y - _down_y) > 14.0 and absf(p.y - _down_y) > absf(p.x - _down_x)):
+		_dragging_y = true
+		_scroll = clampf(_scroll_start - (p.y - _down_y), 0.0, _scroll_max)
+
+
 func on_pointer_up(p: Vector2) -> void:
-	if _down_x >= 0.0 and absf(p.x - _down_x) > 90.0:
+	if _down_x >= 0.0 and not _dragging_y and absf(p.x - _down_x) > 90.0:
 		_go(-1 if p.x > _down_x else 1)
 	_down_x = -1.0
+	_dragging_y = false
 
 
 func _visible_lines(lines: Array, m: String) -> Array:
@@ -117,46 +137,55 @@ func _draw() -> void:
 	var n := _count()
 	var a := clampf(age / 0.25, 0.0, 1.0)
 	var title: String = "CONTROLS" if page >= TutorialData.PAGES.size() else TutorialData.PAGES[page].title
-	UITheme.head(self, "HOW TO PLAY", 0, 14, 34, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var compact := h < 460.0
+	UITheme.head(self, "HOW TO PLAY", 0, 4 if compact else 14, 26 if compact else 34, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	# page tabs
 	_tab_rects.clear()
 	var tab_w := minf(150.0, (w - 40.0) / n)
 	var tx := (w - tab_w * n) * 0.5
+	var tab_y := 36.0 if compact else 58.0
 	for i in n:
-		var r := Rect2(tx + i * tab_w, 58, tab_w - 4, 8)
-		_tab_rects.append(Rect2(r.position.x, 50, r.size.x, 24))
+		var r := Rect2(tx + i * tab_w, tab_y, tab_w - 4, 8)
+		_tab_rects.append(Rect2(r.position.x, tab_y - 8.0, r.size.x, 24))
 		var on := i == page
 		UITheme.panel(self, r, Color(1, 0.9, 0.3, 0.9) if on else Color(0.35, 0.32, 0.18, 0.7), Color(0, 0, 0, 0), 3)
-	UITheme.head(self, "%d/%d  %s" % [page + 1, n, title], 0, 74, 24, Color(1, 0.95, 0.6, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.head(self, "%d/%d  %s" % [page + 1, n, title], 0, 44 if compact else 74, 22 if compact else 24, Color(1, 0.95, 0.6, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	# scheme chip
 	var chip := "SHOWING: %s" % MODE_NAMES[m]
-	var cwid := UITheme.text_w(chip, 13) + 24.0
-	_chip_rect = Rect2(w - cwid - 16.0, 18, cwid, 26)
+	var cfs := 15 if compact else 13
+	var cwid := UITheme.text_w(chip, cfs) + 24.0
+	_chip_rect = Rect2(w - cwid - 16.0, 8 if compact else 18, cwid, 28 if compact else 26)
 	UITheme.panel(self, _chip_rect, Color(0.1, 0.09, 0.05, 0.9), Color(0.9, 0.8, 0.2, 0.5), 5, 1)
-	UITheme.text(self, chip, _chip_rect.position.x, _chip_rect.position.y + 5, 13, Color(0.95, 0.9, 0.6), HORIZONTAL_ALIGNMENT_CENTER, cwid)
+	UITheme.text(self, chip, _chip_rect.position.x, _chip_rect.position.y + 5, cfs, Color(0.95, 0.9, 0.6), HORIZONTAL_ALIGNMENT_CENTER, cwid)
 
 	# body panel
-	var pr := Rect2(36, 112, w - 72, h - 112 - 66)
+	var pr := Rect2(36, 72, w - 72, h - 72 - 46) if compact else Rect2(36, 112, w - 72, h - 112 - 66)
 	UITheme.panel(self, pr, Color(0.03, 0.026, 0.014, 0.92), Color(0.9, 0.8, 0.2, 0.4), 8, 1)
-	var inner := Rect2(pr.position + Vector2(24, 16), pr.size - Vector2(48, 32))
+	var inner := Rect2(pr.position + Vector2(24, 16), pr.size - Vector2(48, 32)) if not compact else Rect2(pr.position + Vector2(18, 10), pr.size - Vector2(36, 20))
+	_scroll_max = 0.0
 	if page >= TutorialData.PAGES.size():
 		_draw_controls(inner, m)
+	elif compact:
+		_draw_page_scrolling(inner, _visible_lines(TutorialData.PAGES[page].lines, m))
 	else:
 		_draw_page(inner, _visible_lines(TutorialData.PAGES[page].lines, m))
 
 	# footer navigation
-	var by := h - 52.0
-	_back_rect = Rect2(36, by, 150, 36)
+	var by := h - 40.0 if compact else h - 52.0
+	var bh := 34.0 if compact else 36.0
+	_back_rect = Rect2(36, by, 150, bh)
 	button_rect(_back_rect, "[ BACK ]", _back_rect.has_point(pointer), 18)
-	_prev_rect = Rect2(w - 36 - 310, by, 150, 36)
-	_next_rect = Rect2(w - 36 - 150, by, 150, 36)
+	_prev_rect = Rect2(w - 36 - 310, by, 150, bh)
+	_next_rect = Rect2(w - 36 - 150, by, 150, bh)
 	button_rect(_prev_rect, "< PREV", _prev_rect.has_point(pointer), 18)
 	button_rect(_next_rect, "NEXT >", _next_rect.has_point(pointer), 18)
 	var hint: String = ui.input.hint("LEFT/RIGHT page    UP/DOWN other controls    ESC back", "D-Pad Left/Right page    A next    B back",
 		"SWIPE or tap arrows    tap the chip for other controls")
 	var hx := 36.0 + 150.0 + 14.0
 	var hw := _prev_rect.position.x - 14.0 - hx
-	UITheme.text(self, hint, hx, by + 9, UITheme.fit(hint, 13, hw), Color(0.7, 0.66, 0.46, 0.95), HORIZONTAL_ALIGNMENT_CENTER, hw)
+	if compact and _scroll_max > 0.0:
+		hint = "Drag: scroll    Swipe: page"
+	UITheme.text(self, hint, hx, by + 9, UITheme.fit(hint, 14 if compact else 13, hw), Color(0.8, 0.76, 0.56, 0.95) if compact else Color(0.7, 0.66, 0.46, 0.95), HORIZONTAL_ALIGNMENT_CENTER, hw)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.1), 3.0)
 	UITheme.vignette(self, size, 0.4)
 
@@ -187,6 +216,38 @@ func _draw_page(r: Rect2, lines: Array) -> void:
 		else:
 			UITheme.wrapped(self, s, r.position.x, y, r.size.x, fs, Color(0.85, 0.85, 0.85), HORIZONTAL_ALIGNMENT_LEFT)
 		y += lh + gap
+
+
+## Compact (phone) body: a fixed, readable font and a drag-to-scroll column. Lines that do not fit completely are
+## not drawn (no half-cut text); a thin scrollbar shows the position.
+func _draw_page_scrolling(r: Rect2, lines: Array) -> void:
+	var body := UITheme.body_font()
+	var fs := 17
+	var gap := 8.0
+	var total := 0.0
+	for l in lines:
+		total += _line_h(body, l, r.size.x, fs) + gap
+	total -= gap
+	_scroll_max = maxf(0.0, total - r.size.y)
+	_scroll = clampf(_scroll, 0.0, _scroll_max)
+	var y := r.position.y - _scroll
+	for l in lines:
+		var s: String = l
+		var lh := _line_h(body, s, r.size.x, fs)
+		if y >= r.position.y - 0.5 and y + lh <= r.end.y + 0.5:
+			if s.begins_with("## "):
+				UITheme.head(self, s.substr(3), r.position.x, y + 3.0, fs + 2, UITheme.GOLD_BRIGHT)
+			elif s.begins_with("- "):
+				draw_circle(Vector2(r.position.x + 5, y + fs * 0.62), 2.8, Color(0.9, 0.8, 0.2))
+				UITheme.wrapped(self, s.substr(2), r.position.x + 18, y, r.size.x - 18, fs, Color(0.9, 0.9, 0.9), HORIZONTAL_ALIGNMENT_LEFT)
+			else:
+				UITheme.wrapped(self, s, r.position.x, y, r.size.x, fs, Color(0.9, 0.9, 0.9), HORIZONTAL_ALIGNMENT_LEFT)
+		y += lh + gap
+	if _scroll_max > 0.0:
+		var th := maxf(24.0, r.size.y * r.size.y / (r.size.y + _scroll_max))
+		var ty := r.position.y + (r.size.y - th) * (_scroll / _scroll_max)
+		draw_rect(Rect2(r.end.x + 8.0, r.position.y, 3.0, r.size.y), Color(1, 1, 1, 0.08))
+		draw_rect(Rect2(r.end.x + 8.0, ty, 3.0, th), Color(1, 0.9, 0.3, 0.7))
 
 
 func _line_h(body: Font, s: String, width: float, fs: int) -> float:
