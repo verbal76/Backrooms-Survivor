@@ -33,6 +33,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # ONE definition of the private/public asset artifact name (build number + source SHA, both validated by the gate).
+  RELEASE_ASSETS: coordinated-release-assets-b${{ inputs.build_number }}-${{ substr(inputs.source_sha, 0, 7) }}
+
 concurrency:
   group: build-sequence
   cancel-in-progress: false
@@ -77,7 +81,9 @@ jobs:
       build_number: ${{ inputs.build_number }}
       platform: ${{ inputs.platform }}
       retention_days: 14
-    secrets: inherit
+    secrets:
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
   package:
     needs: build
@@ -97,7 +103,7 @@ jobs:
           ls -la release
       - uses: actions/upload-artifact@v4
         with:
-          name: coordinated-release-assets-b${{ inputs.build_number }}-${{ substr(inputs.source_sha, 0, 7) }}
+          name: ${{ env.RELEASE_ASSETS }}
           path: release/*
           retention-days: 14
 
@@ -126,7 +132,7 @@ jobs:
         run: tools/publish_gate.sh
       - uses: actions/download-artifact@v4
         with:
-          name: coordinated-release-assets-b${{ inputs.build_number }}-${{ substr(inputs.source_sha, 0, 7) }}
+          name: ${{ env.RELEASE_ASSETS }}
           path: release
       - name: Create immutable release build-NN
         env:

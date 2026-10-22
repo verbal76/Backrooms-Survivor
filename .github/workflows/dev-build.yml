@@ -71,7 +71,9 @@ jobs:
       build_number: ${{ inputs.build_number }}
       platform: all
       retention_days: 14
-    secrets: inherit
+    secrets:
+      ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
 
   publish:
     needs: [authorize, build]

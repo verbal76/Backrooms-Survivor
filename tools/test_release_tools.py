@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline tests of the release tooling (no GitHub, no Godot): platform selector, manifest verification,
 SHA-parity refusal, packaging names/checksums. Run: python3 tools/test_release_tools.py"""
-import hashlib, json, os, subprocess, sys, tempfile
+import hashlib, json, os, re, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHA = "a" * 40
@@ -186,21 +186,113 @@ check("gate.sh: permission lookup failure fails closed", gate(gh_ok=False) != 0)
 check("gate.sh: non-tip source refused", gate(src="b" * 40) != 0)
 check("gate.sh: re-run refused", gate(attempt="2") != 0)
 
-# android signing: pinned certificate gate (pure function; no apksigner needed)
+# ---- android signing (behavioural: real keytool + fake apksigner; secrets here are throw-away test values) ----
 sys.path.insert(0, HERE)
 import android_signing as AS
+import shutil
 D1, D2 = "1" * 64, "2" * 64
-out1 = "Signer #1 certificate SHA-256 digest: " + D1
-check("signing: matching pin passes", AS.check(out1, "release", D1)[0])
-check("signing: different key refused (would break in-place updates)", not AS.check(out1, "release", D2)[0])
-check("signing: no pin yet passes but says so", AS.check(out1, "release", "")[0] and "pinned" in AS.check(out1, "release", "")[1])
-check("signing: invalid pin file refused", not AS.check(out1, "release", "invalid")[0])
-check("signing: two signers refused", not AS.check(out1 + "\nSigner #2 certificate SHA-256 digest: " + D2, "release", "")[0])
-check("signing: unsigned output refused", not AS.check("", "release", "")[0])
-bw = open(os.path.join(HERE, "..", ".github/workflows/build-all.yml")).read()
-check("workflow: release mode fails closed without the signing secrets", 'inputs.mode }}" = "release" ]; then' in bw and "ANDROID_KEYSTORE_B64" in bw)
-check("workflow: manual publish workflows pass the signing secrets", all("secrets: inherit" in open(os.path.join(HERE, "..", ".github/workflows", f)).read() for f in ("release-build.yml", "dev-build.yml")))
-check("workflow: validate build passes no secrets", "secrets:" not in open(os.path.join(HERE, "..", ".github/workflows/validate-build.yml")).read().split("uses: ./.github/workflows/build-all.yml")[1])
+out = lambda d: "Signer #1 certificate SHA-256 digest: " + d
+check("sign: release + matching pin passes", AS.check(out(D1), "release", D1)[0])
+check("sign: release + wrong signer blocked", not AS.check(out(D1), "release", D2)[0])
+check("sign: release + EMPTY pin blocked (fail closed)", not AS.check(out(D1), "release", "")[0])
+check("sign: release + malformed pin blocked with its message", AS.check(out(D1), "release", "", "pin line 3 malformed")[1] == "pin line 3 malformed")
+check("sign: APK cert != keystore cert blocked in every mode", not AS.check(out(D1), "validate", "", "", D2)[0])
+check("sign: two signers / unsigned output blocked", not AS.check(out(D1) + "\n" + out(D2), "release", D1)[0] and not AS.check("", "release", D1)[0])
+check("sign: validate mode needs no pin", AS.check(out(D1), "validate", "")[0])
+for txt, want in (("SHA256: " + ":".join([D1[i:i+2] for i in range(0, 64, 2)]).upper(), D1), ("sha256=" + D1, D1), (D1[:60], ""), ("nonsense", "")):
+    check("pin syntax %r" % txt[:16], AS.norm_digest(txt) == want)
+with tempfile.TemporaryDirectory() as td:
+    def pinfile(body):
+        f = os.path.join(td, "pin"); open(f, "w").write(body); return AS.read_pin(f)
+    check("pin file: comments only = nothing pinned, no error", pinfile("# c\n\n") == ("", ""))
+    check("pin file: valid", pinfile("# c\n" + D1 + "\n") == (D1, ""))
+    d, e = pinfile("# c\nSHA256=zz\n")
+    check("pin file: malformed -> actionable error naming the line", d == "" and "line 2" in e and "64 hex" in e)
+    check("pin file: two fingerprints refused", pinfile(D1 + "\n" + D2 + "\n")[1] != "")
+    check("repo pin file is valid (PR check)", AS.read_pin()[1] == "")
+
+    # keystore preparation with a real keystore whose password has shell/.tres-special characters
+    kt = shutil.which("keytool")
+    if kt:
+        PW = 'p$a"s\\w`o r d!'
+        def mk(name, alias, pw):
+            ks = os.path.join(td, name)
+            subprocess.run([kt, "-genkeypair", "-alias", alias, "-keyalg", "RSA", "-keysize", "2048", "-validity", "30", "-dname", "CN=t",
+                            "-keystore", ks, "-storetype", "PKCS12", "-storepass:env", "TP", "-keypass:env", "TP"],
+                           env={**os.environ, "TP": pw}, capture_output=True, check=True)
+            return ks
+        def prep(b64, pw):
+            return subprocess.run([sys.executable, os.path.join(HERE, "android_signing.py"), "prepare", "--keystore", os.path.join(td, "out.ks")],
+                                  env={**os.environ, "KS_B64": b64, "KS_PASS": pw}, capture_output=True, text=True)
+        import base64
+        good = mk("good.p12", "backroomssurvivor", PW)
+        gb = base64.b64encode(open(good, "rb").read()).decode()
+        r = prep(gb, PW)
+        fp = r.stdout.strip()
+        check("keystore: valid keystore (special-char password) prepares and prints only a public fingerprint", r.returncode == 0 and AS.norm_digest(fp) == fp and PW not in r.stdout + r.stderr)
+        check("keystore: wrong password blocked, password not echoed", prep(gb, "nope").returncode != 0 and PW not in prep(gb, "nope").stderr)
+        check("keystore: wrong alias blocked", prep(base64.b64encode(open(mk("w.p12", "other", PW), "rb").read()).decode(), PW).returncode != 0)
+        check("keystore: empty / non-base64 / truncated / garbage blocked", all(prep(b, PW).returncode != 0 for b in ("", "not base64!!", gb[:40], base64.b64encode(b"x" * 500).decode())))
+        # editor settings: the password survives escaping byte-for-byte and file is private
+        sf = os.path.join(td, "es.tres")
+        subprocess.run([sys.executable, os.path.join(HERE, "android_signing.py"), "settings", "--out", sf, "--sdk", "/s", "--jdk", "/j", "--keystore", "/k", "--alias", "a"],
+                       env={**os.environ, "KS_PASS": PW}, check=True)
+        line = [l for l in open(sf).read().splitlines() if l.startswith("export/android/debug_keystore_pass")][0]
+        val = line.split(" = ", 1)[1][1:-1]
+        check("settings: special-character password round-trips through .tres escaping", val.replace('\\"', '"').replace("\\\\", "\\") == PW and oct(os.stat(sf).st_mode & 0o777) == "0o600")
+
+        # verify against a fake apksigner (output format of the real tool)
+        def fake(name, body):
+            f = os.path.join(td, name); open(f, "w").write("#!/bin/sh\n" + body); os.chmod(f, 0o755); return f
+        apk = os.path.join(td, "a.apk"); open(apk, "wb").write(b"apk")
+        def ver(signer, mode, expect="", apkp=apk):
+            args = [sys.executable, os.path.join(HERE, "android_signing.py"), "verify", apkp, "--apksigner", signer, "--mode", mode] + (["--expect-cert", expect] if expect else [])
+            return subprocess.run(args, capture_output=True, text=True).returncode
+        okf = fake("ok", 'echo "Signer #1 certificate SHA-256 digest: %s"' % D1)
+        check("verify: unsigned APK (apksigner rejects) blocked", ver(fake("bad", "echo 'DOES NOT VERIFY' >&2; exit 1"), "validate") != 0)
+        check("verify: missing / empty / stale-absent APK blocked", ver(okf, "validate", apkp=os.path.join(td, "none.apk")) != 0)
+        check("verify: wrong keystore certificate blocked", ver(okf, "validate", D2) != 0)
+        check("verify: matching keystore certificate passes (validate)", ver(okf, "validate", D1) == 0)
+        check("verify: release without a pin blocked (repo pin is empty until the owner sets it)", AS.read_pin()[0] != "" or ver(okf, "release", D1) != 0)
+        check("verify: missing apksigner binary blocked", ver(os.path.join(td, "nope"), "validate") != 0)
+    else:
+        print("SKIP keystore tests (no keytool)")
+
+    # SDK tool resolution
+    sdk = os.path.join(td, "sdk"); os.makedirs(os.path.join(sdk, "build-tools", "33.0.2")); os.makedirs(os.path.join(sdk, "build-tools", "34.0.0"))
+    for v in ("33.0.2", "34.0.0"): open(os.path.join(sdk, "build-tools", v, "apksigner"), "w").write("")
+    check("apksigner resolves to 34.0.0 when present", AS.find_apksigner(sdk).endswith("34.0.0/apksigner"))
+    check("apksigner missing -> clear failure", subprocess.run([sys.executable, os.path.join(HERE, "android_signing.py"), "find-apksigner", os.path.join(td, "nosdk")], capture_output=True).returncode != 0)
+
+    # owner setup script: idempotent + recoverable, with a fake gh and a throw-away HOME (no network, no real secrets)
+    if kt and shutil.which("openssl"):
+        home = os.path.join(td, "home"); os.makedirs(os.path.join(home, "bin"))
+        log = os.path.join(td, "gh.log")
+        gh = os.path.join(home, "bin", "gh"); open(gh, "w").write('#!/bin/sh\n[ -n "$GH_FAIL" ] && exit 1\necho "$@" >> "%s"; cat > /dev/null\n' % log); os.chmod(gh, 0o755)
+        env = {**os.environ, "HOME": home, "PATH": os.path.join(home, "bin") + ":" + os.environ["PATH"]}
+        setup = os.path.join(HERE, "android_keystore_setup.sh")
+        r1 = subprocess.run(["bash", setup, "o/r"], env={**env, "GH_FAIL": "1"}, capture_output=True, text=True)
+        bk = os.path.join(home, "backrooms-signing-backup")
+        check("setup: failed upload still leaves keystore AND password saved", r1.returncode != 0 and os.path.getsize(os.path.join(bk, "PASSWORD.txt")) > 0 and os.path.exists(os.path.join(bk, "backroomssurvivor.p12")))
+        ks_before = open(os.path.join(bk, "backroomssurvivor.p12"), "rb").read()
+        r2 = subprocess.run(["bash", setup, "o/r"], env=env, capture_output=True, text=True)
+        pw = open(os.path.join(bk, "PASSWORD.txt")).read().strip()
+        check("setup: re-run reuses the same keystore (idempotent) and uploads both secrets", r2.returncode == 0 and open(os.path.join(bk, "backroomssurvivor.p12"), "rb").read() == ks_before and open(log).read().count("secret set") == 2)
+        check("setup: password is never printed", pw not in r1.stdout + r1.stderr + r2.stdout + r2.stderr)
+        check("setup: prints the public fingerprint, files are private", AS.norm_digest(open(os.path.join(bk, "cert.sha256")).read()) != "" and oct(os.stat(os.path.join(bk, "PASSWORD.txt")).st_mode & 0o777) == "0o600")
+
+# ---- workflow structure (kept deliberately small; the behaviour is tested above) ----
+W = lambda f: open(os.path.join(HERE, "..", ".github/workflows", f)).read()
+bw, rw, dw, vw = W("build-all.yml"), W("release-build.yml"), W("dev-build.yml"), W("validate-build.yml")
+exp = bw[bw.index("Export Android"):bw.index("Write release manifest")]
+check("workflow: Godot Android export is not success-masked", not re.search(r"godot[^\n]*export-debug[^\n]*\|\|\s*true", exp) and "pipefail" in exp)
+check("workflow: stale APK removed before export, verify runs on the fresh APK", exp.index("rm -f build/android/BackroomsSurvivor-dev.apk") < exp.index("export-debug") < exp.index("android_signing.py verify"))
+check("workflow: release requires pin + secrets before any SDK download", exp.index("check-pin --require") < exp.index("sdkmanager"))
+check("workflow: keystore validated before export and removed after", exp.index("android_signing.py prepare") < exp.index("export-debug") and "trap cleanup EXIT" in exp)
+check("workflow: signing settings file is never printed", "cat ~/.config/godot/editor_settings" not in exp)
+check("workflow: no secrets: inherit, only the two signing secrets are passed", "secrets: inherit" not in rw + dw + vw and all(n in w for w in (rw, dw) for n in ("ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}", "ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}")))
+check("workflow: validate build passes no secrets", "secrets:" not in vw.split("uses: ./.github/workflows/build-all.yml")[1])
+check("workflow: release artifact name defined once and used by upload and download", rw.count("RELEASE_ASSETS") == 3 and "coordinated-release-assets-b" in rw and rw.count("coordinated-release-assets-b") == 1)
 
 print("RELEASE TOOLS: " + ("PASSED" if not fails else "FAILED " + ", ".join(fails)))
 sys.exit(1 if fails else 0)
