@@ -29,15 +29,44 @@ them. These fingerprints must NOT be pinned. The first APK signed with the persi
   (`user://`) are kept. Never reuse a lower number for a distributed build.
 - Nothing secret is in the repo; only the public certificate digest is committed.
 
-## One-time owner setup (minimum steps)
-On your own machine (JDK `keytool` + GitHub CLI logged in as the repo admin):
-1. `tools/android_keystore_setup.sh` - (re-runnable; reuses an existing keystore and saves credentials before uploading) creates `~/backrooms-signing-backup/` (keystore + password), sets both secrets, prints the
-   public fingerprint. It refuses to overwrite an existing key.
-2. **Back up `~/backrooms-signing-backup/` immediately** (password manager + offline copy). The key cannot be recovered from GitHub
-   (secrets are write-only).
-3. Put the printed fingerprint into `tools/android_signing_cert.sha256` (or send it to the agent) and merge via `dev`.
-4. Build once; install it (one last uninstall of the old build is unavoidable - different key). Every later build updates in place.
-   Verify: `adb install -r` / just open the APK over the previous one; progress is kept.
+## Owner setup (Windows, copy-paste; you keep the key - nothing secret goes through chat)
+**Tools needed once:** Git for Windows (gives *Git Bash* and `openssl`), a JDK (e.g. `winget install EclipseAdoptium.Temurin.17.JDK`, gives `keytool`),
+GitHub CLI (`winget install GitHub.cli`, then `gh auth login` with the account that owns the repo), and Android platform-tools (`adb`).
+Open **Git Bash** (not PowerShell) in a clone of the repo on `dev`/this branch and run:
+
+1. `keytool -version && openssl version && gh auth status` - all three must answer.
+2. `tools/android_keystore_setup.sh` - creates `~/backrooms-signing-backup/` (keystore `backroomssurvivor.p12`, `PASSWORD.txt`, public
+   `cert.sha256`), proves the pair opens and holds the alias, then uploads the two repo secrets. Nothing is printed except the public
+   fingerprint. If anything fails, fix the cause and run it again: the saved keystore is reused, never regenerated.
+3. **Back up `~/backrooms-signing-backup/` now**: copy the whole folder to (a) a password manager attachment or encrypted drive and
+   (b) one offline copy (USB stick). Keep the keystore and password together but away from the repo and from chat. GitHub secrets are
+   write-only, so this folder is the only copy of the key.
+4. Send me **only the fingerprint** (the 64-hex line the script prints, or the content of `cert.sha256`). I pin it in
+   `tools/android_signing_cert.sha256`; release builds refuse to run without a valid pin and refuse any APK signed by another key.
+
+## Before the one final uninstall: back up your save (debug builds only)
+No build has an in-game export, `allowBackup` is false and Android's cloud backup is off, so the save would be lost on uninstall unless
+copied out. The shipped APKs are **debuggable** (verified from Build 14's manifest), so `adb run-as` can copy app data. USB debugging on,
+phone connected, in PowerShell or Git Bash:
+
+    adb shell run-as com.verbal76.backroomssurvivor ls files            # expect backrooms_save.json (+ .bak), options.json
+    adb exec-out run-as com.verbal76.backroomssurvivor cat files/backrooms_save.json > backrooms_save.json
+    adb exec-out run-as com.verbal76.backroomssurvivor cat files/options.json > options.json
+
+Keep those files. After installing the first APK signed with the new key, run it once (so the app data folder exists), close it, then:
+
+    adb push backrooms_save.json /data/local/tmp/
+    adb shell run-as com.verbal76.backroomssurvivor cp /data/local/tmp/backrooms_save.json files/backrooms_save.json
+    adb shell rm /data/local/tmp/backrooms_save.json
+
+(Same for `options.json`.) Not yet proven on the owner's phone: the `files/` location is Godot's usual internal `user://`; the `ls` in the
+first command confirms it. If `run-as` is refused the save cannot be extracted, and the uninstall loses progress.
+
+## Update-continuity test (one private APK pair; I run the builds after the pin is merged)
+1. Build A (private, `local_only`, signed with the key) -> install -> play a few minutes so a save exists -> note the level/day.
+2. Build B (next number, same key) -> install **over A with no uninstall** (`adb install -r` or open the APK) -> the save, options and
+   progress are all still there. `adb shell dumpsys package com.verbal76.backroomssurvivor | grep versionCode` shows B's number.
+3. `apksigner verify --print-certs` of A and B (the workflow already does this) shows the identical pinned certificate.
 
 ## Recovery / rotation
 - Secrets lost, keystore backup intact: re-run `gh secret set` with the backed-up values (same key, updates keep working).
