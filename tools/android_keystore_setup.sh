@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Owner setup of the persistent Android signing identity. Run on your own machine (JDK `keytool`, `openssl`, GitHub CLI `gh`
 # logged in with admin rights to the repo). Never prints or commits the key or password.
-#   tools/android_keystore_setup.sh [owner/repo]
+#   tools/android_keystore_setup.sh [owner/repo] [--replace-secrets]
+# ONLY needed when no permanent keystore exists yet. If the ANDROID_RELEASE_* secrets already exist this refuses to overwrite them.
 # Recoverable + idempotent: the keystore and its password are written to ~/backrooms-signing-backup BEFORE anything is uploaded.
 # If a step fails, fix the cause and run it again: an existing, valid keystore is REUSED (never regenerated or overwritten) and the
 # secrets are simply uploaded again from the saved files.
 set -euo pipefail
 REPO="${1:-verbal76/Backrooms-Survivor}"
 ALIAS=backroomssurvivor
+FORCE="${2:-}"
 DIR="$HOME/backrooms-signing-backup"
 KS="$DIR/backroomssurvivor.p12"
 PWF="$DIR/PASSWORD.txt"
@@ -38,11 +40,17 @@ echo "$FP" > "$DIR/cert.sha256"
 # Uploads: base64 without line wraps (GNU `-w0` or BSD/macOS fallback), password from the saved file; never echoed.
 B64="$(base64 -w0 "$KS" 2>/dev/null || base64 < "$KS" | tr -d '\n')"
 [ -n "$B64" ] || { echo "base64 produced nothing"; exit 1; }
-printf '%s' "$B64" | gh secret set ANDROID_KEYSTORE_B64 --repo "$REPO"
-gh secret set ANDROID_KEYSTORE_PASSWORD --repo "$REPO" < "$PWF"
+if gh secret list --repo "$REPO" 2>/dev/null | grep -q '^ANDROID_RELEASE_KEYSTORE_BASE64' && [ "$FORCE" != "--replace-secrets" ]; then
+  echo "ANDROID_RELEASE_KEYSTORE_BASE64 already exists on $REPO: NOT overwriting it (a different key would force every user to reinstall)."
+  echo "Re-run with --replace-secrets only if you really intend to replace the permanent identity."; exit 1
+fi
+printf '%s' "$B64" | gh secret set ANDROID_RELEASE_KEYSTORE_BASE64 --repo "$REPO"
+gh secret set ANDROID_RELEASE_KEYSTORE_PASSWORD --repo "$REPO" < "$PWF"
+gh secret set ANDROID_RELEASE_KEY_PASSWORD --repo "$REPO" < "$PWF"
+printf '%s' "$ALIAS" | gh secret set ANDROID_RELEASE_KEY_ALIAS --repo "$REPO"
 
 echo
-echo "Done. Secrets ANDROID_KEYSTORE_B64 and ANDROID_KEYSTORE_PASSWORD are set on $REPO."
+echo "Done. The four ANDROID_RELEASE_* secrets are set on $REPO."
 echo "BACK UP $DIR (keystore + PASSWORD.txt) to a password manager / offline storage NOW. Losing it means one more reinstall."
 echo "Public certificate fingerprint (safe to share/commit): $FP"
 echo "Next: put it in tools/android_signing_cert.sha256 on dev (release builds refuse to run until it is pinned)."

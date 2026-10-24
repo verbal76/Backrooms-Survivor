@@ -43,11 +43,17 @@ on:
         type: boolean
         default: true
     secrets:
-      ANDROID_KEYSTORE_B64:
-        description: Base64 of the persistent Android signing keystore (PKCS12). See docs/ANDROID_SIGNING.md
+      ANDROID_RELEASE_KEYSTORE_BASE64:
+        description: Base64 of the persistent Android signing keystore. See docs/ANDROID_SIGNING.md
         required: false
-      ANDROID_KEYSTORE_PASSWORD:
-        description: Password of that keystore (store and key password)
+      ANDROID_RELEASE_KEYSTORE_PASSWORD:
+        description: Store password of that keystore
+        required: false
+      ANDROID_RELEASE_KEY_ALIAS:
+        description: Alias of the signing key inside the keystore
+        required: false
+      ANDROID_RELEASE_KEY_PASSWORD:
+        description: Password of that key (may equal the store password; optional)
         required: false
     outputs:
       sha:
@@ -198,13 +204,15 @@ jobs:
         if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
         working-directory: godot
         env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
           # Release fails closed BEFORE any download: a valid pinned certificate and the persistent-key secrets are mandatory.
           if [ "${{ inputs.mode }}" = "release" ]; then
             python3 ../tools/android_signing.py check-pin --require
-            [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] || { echo "::error::ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD secrets are missing: a release build must use the persistent signing key (docs/ANDROID_SIGNING.md)"; exit 1; }
+            [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ] || { echo "::error::ANDROID_RELEASE_KEYSTORE_BASE64 / _KEYSTORE_PASSWORD / _KEY_ALIAS secrets are missing: a release build must use the persistent signing key (docs/ANDROID_SIGNING.md)"; exit 1; }
           fi
           # Godot 4.3 needs cmdline-tools, platform-tools, build-tools 34.0.0 and platform android-34.
           # The image's bundled SDK is incomplete, so install a fresh one.
@@ -226,11 +234,11 @@ jobs:
           cleanup() { rm -f "$KS" "$SETTINGS"; }
           trap cleanup EXIT
           EXPECT=""
-          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
-            KS_ALIAS=backroomssurvivor
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ]; then
             EXPECT="$(python3 ../tools/android_signing.py prepare --keystore "$KS")"
             echo "Signing with the persistent keystore (alias $KS_ALIAS), certificate $EXPECT"
           else
+            [ "${{ inputs.mode }}" != "release" ] || { echo "::error::incomplete signing secrets in a release build"; exit 1; }
             KS_PASS="$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"; export KS_PASS; KS_ALIAS=androiddebugkey
             echo "::warning::validate build signed with a THROW-AWAY key; this APK is not installable over a release APK"
             keytool -keyalg RSA -genkeypair -alias "$KS_ALIAS" -keypass:env KS_PASS \

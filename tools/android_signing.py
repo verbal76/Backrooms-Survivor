@@ -2,8 +2,10 @@
 """Android signing identity helper (CI + owner tooling). Never prints keys or passwords.
 
   check-pin [--require]        validate tools/android_signing_cert.sha256 (syntax; --require: also non-empty). Used by PR checks.
-  prepare --keystore F         decode ANDROID_KEYSTORE_B64 (env KS_B64) to F, check it is a readable non-empty keystore that opens
-                               with the password (env KS_PASS) and holds alias ALIAS; print its certificate SHA-256 (public).
+  prepare --keystore F         decode ANDROID_RELEASE_KEYSTORE_BASE64 (env KS_B64) to F, check it is a readable non-empty keystore that
+                               opens with the store password (env KS_PASS) and holds the alias (env KS_ALIAS); if the key password
+                               (env KEY_PASS) differs from the store password, align it on this temporary copy (Godot takes ONE
+                               password). Prints the certificate SHA-256 (public).
   settings --out F --sdk S --jdk J --keystore F --alias A    write Godot editor settings (password from env KS_PASS, escaped).
   find-apksigner SDK           resolve the SDK's apksigner (prefers build-tools 34.0.0).
   verify APK --apksigner P --mode release|validate [--expect-cert HEX]
@@ -22,7 +24,6 @@ import sys
 
 PIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "android_signing_cert.sha256")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
-ALIAS = "backroomssurvivor"
 
 
 def die(msg):
@@ -84,6 +85,7 @@ def run(cmd, env=None):
 
 
 def keystore_cert(ks, alias, password_env="KS_PASS"):
+    """SHA-256 of the alias certificate; dies with an actionable message."""
     env = dict(os.environ)
     r = run(["keytool", "-list", "-v", "-keystore", ks, "-alias", alias, "-storepass:env", password_env], env)
     if r.returncode != 0:
@@ -91,7 +93,7 @@ def keystore_cert(ks, alias, password_env="KS_PASS"):
         if "alias" in msg and ("does not exist" in msg or "not exist" in msg):
             die("the keystore has no alias '%s' (re-run tools/android_keystore_setup.sh or fix the secret)" % alias)
         if "password" in msg or "tampered" in msg:
-            die("the keystore does not open with ANDROID_KEYSTORE_PASSWORD (wrong password or corrupt keystore)")
+            die("the keystore does not open with ANDROID_RELEASE_KEYSTORE_PASSWORD (wrong password or corrupt keystore)")
         die("keytool could not read the keystore (corrupt or not PKCS12): " + (r.stderr.strip().splitlines() or ["?"])[-1][:200])
     m = re.search(r"SHA-?256:\s*([0-9A-Fa-f:]{95,})", r.stdout)
     d = norm_digest(m.group(1)) if m else ""
@@ -102,18 +104,27 @@ def keystore_cert(ks, alias, password_env="KS_PASS"):
 
 def cmd_prepare(a):
     b64, pw = os.environ.get("KS_B64", ""), os.environ.get("KS_PASS", "")
-    if not b64.strip() or not pw:
-        die("ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD are empty")
+    alias, kpw = os.environ.get("KS_ALIAS", "").strip(), os.environ.get("KEY_PASS", "")
+    if not b64.strip() or not pw or not alias:
+        die("ANDROID_RELEASE_KEYSTORE_BASE64 / ANDROID_RELEASE_KEYSTORE_PASSWORD / ANDROID_RELEASE_KEY_ALIAS must all be set and non-empty")
     try:
         raw = base64.b64decode(b64.strip(), validate=True)
     except (binascii.Error, ValueError):
-        die("ANDROID_KEYSTORE_B64 is not valid base64 (truncated or pasted with extra characters)")
+        die("ANDROID_RELEASE_KEYSTORE_BASE64 is not valid base64 (truncated or pasted with extra characters)")
     if len(raw) < 64:
         die("the decoded keystore is empty or too small (%d bytes)" % len(raw))
     fd = os.open(a.keystore, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(raw)
-    print(keystore_cert(a.keystore, ALIAS))
+    cert = keystore_cert(a.keystore, alias)
+    if kpw and kpw != pw:
+        env = dict(os.environ)
+        r = run(["keytool", "-keypasswd", "-alias", alias, "-keystore", a.keystore, "-storepass:env", "KS_PASS",
+                 "-keypass:env", "KEY_PASS", "-new:env", "KS_PASS"], env)
+        if r.returncode != 0 and "PKCS12" not in run(["keytool", "-list", "-v", "-keystore", a.keystore, "-storepass:env", "KS_PASS"], env).stdout:
+            die("ANDROID_RELEASE_KEY_PASSWORD does not unlock the key '%s' (wrong key password)" % alias)
+        # PKCS12 keystores use the store password for keys, so a differing key password is simply not used.
+    print(cert)
 
 
 def tres_escape(s):

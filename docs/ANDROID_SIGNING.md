@@ -15,7 +15,8 @@ no established signing identity to continue**: builds 12-15 cannot update each o
 them. These fingerprints must NOT be pinned. The first APK signed with the persistent key needs one last uninstall.
 
 ## How it works
-- Secrets `ANDROID_KEYSTORE_B64` (base64 PKCS12) and `ANDROID_KEYSTORE_PASSWORD` (store = key password), alias `backroomssurvivor`.
+- Secrets `ANDROID_RELEASE_KEYSTORE_BASE64` (base64 keystore), `ANDROID_RELEASE_KEYSTORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS` and
+  `ANDROID_RELEASE_KEY_PASSWORD` (optional; Godot signs with one password, so if it differs from the store password the CI copy is aligned).
 - `build-all.yml` (Export Android): with the secrets -> signs with that key. **release mode without the secrets fails closed.**
   validate mode (PR checks, forks, no secrets) uses a throw-away key and prints a warning; such APKs are test-only.
 - Release mode fails closed, before any SDK download, unless `tools/android_signing_cert.sha256` holds a valid pinned fingerprint
@@ -28,6 +29,9 @@ them. These fingerprints must NOT be pinned. The first APK signed with the persi
   number, which the publish gate keeps strictly increasing. Same id + same signer + higher versionCode = in-place update; saves
   (`user://`) are kept. Never reuse a lower number for a distributed build.
 - Nothing secret is in the repo; only the public certificate digest is committed.
+
+## Owner setup. The four `ANDROID_RELEASE_*` secrets already exist (owner-created keystore): skip to step 4 and send the fingerprint.
+The setup script below is only for creating a keystore when none exists (it refuses to overwrite existing secrets).
 
 ## Owner setup (Windows, copy-paste; you keep the key - nothing secret goes through chat)
 **Tools needed once:** Git for Windows (gives *Git Bash* and `openssl`), a JDK (e.g. `winget install EclipseAdoptium.Temurin.17.JDK`, gives `keytool`),

@@ -221,9 +221,9 @@ with tempfile.TemporaryDirectory() as td:
                             "-keystore", ks, "-storetype", "PKCS12", "-storepass:env", "TP", "-keypass:env", "TP"],
                            env={**os.environ, "TP": pw}, capture_output=True, check=True)
             return ks
-        def prep(b64, pw):
+        def prep(b64, pw, al="backroomssurvivor", kp=""):
             return subprocess.run([sys.executable, os.path.join(HERE, "android_signing.py"), "prepare", "--keystore", os.path.join(td, "out.ks")],
-                                  env={**os.environ, "KS_B64": b64, "KS_PASS": pw}, capture_output=True, text=True)
+                                  env={**os.environ, "KS_B64": b64, "KS_PASS": pw, "KS_ALIAS": al, "KEY_PASS": kp}, capture_output=True, text=True)
         import base64
         good = mk("good.p12", "backroomssurvivor", PW)
         gb = base64.b64encode(open(good, "rb").read()).decode()
@@ -231,7 +231,14 @@ with tempfile.TemporaryDirectory() as td:
         fp = r.stdout.strip()
         check("keystore: valid keystore (special-char password) prepares and prints only a public fingerprint", r.returncode == 0 and AS.norm_digest(fp) == fp and PW not in r.stdout + r.stderr)
         check("keystore: wrong password blocked, password not echoed", prep(gb, "nope").returncode != 0 and PW not in prep(gb, "nope").stderr)
-        check("keystore: wrong alias blocked", prep(base64.b64encode(open(mk("w.p12", "other", PW), "rb").read()).decode(), PW).returncode != 0)
+        check("keystore: wrong alias blocked", prep(gb, PW, "other").returncode != 0)
+        check("keystore: empty alias blocked", prep(gb, PW, "").returncode != 0)
+        check("keystore: PKCS12 with a differing key password still prepares (key password unused)", prep(gb, PW, "backroomssurvivor", "different").returncode == 0)
+        jks = os.path.join(td, "k.jks")
+        subprocess.run([kt, "-genkeypair", "-alias", "backroomssurvivor", "-keyalg", "RSA", "-keysize", "2048", "-validity", "30", "-dname", "CN=t", "-keystore", jks, "-storetype", "JKS", "-storepass:env", "SP", "-keypass:env", "KP"], env={**os.environ, "SP": "storepass1", "KP": "keypass22"}, capture_output=True, check=True)
+        jb = base64.b64encode(open(jks, "rb").read()).decode()
+        check("keystore: JKS with a different key password is aligned for Godot", prep(jb, "storepass1", "backroomssurvivor", "keypass22").returncode == 0)
+        check("keystore: JKS with a wrong key password blocked", prep(jb, "storepass1", "backroomssurvivor", "bad-key-pass").returncode != 0)
         check("keystore: empty / non-base64 / truncated / garbage blocked", all(prep(b, PW).returncode != 0 for b in ("", "not base64!!", gb[:40], base64.b64encode(b"x" * 500).decode())))
         # editor settings: the password survives escaping byte-for-byte and file is private
         sf = os.path.join(td, "es.tres")
@@ -268,7 +275,7 @@ with tempfile.TemporaryDirectory() as td:
     if kt and shutil.which("openssl"):
         home = os.path.join(td, "home"); os.makedirs(os.path.join(home, "bin"))
         log = os.path.join(td, "gh.log")
-        gh = os.path.join(home, "bin", "gh"); open(gh, "w").write('#!/bin/sh\n[ -n "$GH_FAIL" ] && exit 1\necho "$@" >> "%s"; cat > /dev/null\n' % log); os.chmod(gh, 0o755)
+        gh = os.path.join(home, "bin", "gh"); open(gh, "w").write('#!/bin/sh\n[ -n "$GH_FAIL" ] && exit 1\ncase "$*" in *"secret set"*) echo "$@" >> "%s"; cat > /dev/null;; esac\n' % log); os.chmod(gh, 0o755)
         env = {**os.environ, "HOME": home, "PATH": os.path.join(home, "bin") + ":" + os.environ["PATH"]}
         setup = os.path.join(HERE, "android_keystore_setup.sh")
         r1 = subprocess.run(["bash", setup, "o/r"], env={**env, "GH_FAIL": "1"}, capture_output=True, text=True)
@@ -277,7 +284,7 @@ with tempfile.TemporaryDirectory() as td:
         ks_before = open(os.path.join(bk, "backroomssurvivor.p12"), "rb").read()
         r2 = subprocess.run(["bash", setup, "o/r"], env=env, capture_output=True, text=True)
         pw = open(os.path.join(bk, "PASSWORD.txt")).read().strip()
-        check("setup: re-run reuses the same keystore (idempotent) and uploads both secrets", r2.returncode == 0 and open(os.path.join(bk, "backroomssurvivor.p12"), "rb").read() == ks_before and open(log).read().count("secret set") == 2)
+        check("setup: re-run reuses the same keystore (idempotent) and uploads all four secrets", r2.returncode == 0 and open(os.path.join(bk, "backroomssurvivor.p12"), "rb").read() == ks_before and open(log).read().count("secret set") == 4)
         check("setup: password is never printed", pw not in r1.stdout + r1.stderr + r2.stdout + r2.stderr)
         check("setup: prints the public fingerprint, files are private", AS.norm_digest(open(os.path.join(bk, "cert.sha256")).read()) != "" and oct(os.stat(os.path.join(bk, "PASSWORD.txt")).st_mode & 0o777) == "0o600")
 
@@ -290,7 +297,7 @@ check("workflow: stale APK removed before export, verify runs on the fresh APK",
 check("workflow: release requires pin + secrets before any SDK download", exp.index("check-pin --require") < exp.index("sdkmanager"))
 check("workflow: keystore validated before export and removed after", exp.index("android_signing.py prepare") < exp.index("export-debug") and "trap cleanup EXIT" in exp)
 check("workflow: signing settings file is never printed", "cat ~/.config/godot/editor_settings" not in exp)
-check("workflow: no secrets: inherit, only the two signing secrets are passed", "secrets: inherit" not in rw + dw + vw and all(n in w for w in (rw, dw) for n in ("ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}", "ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}")))
+check("workflow: no secrets: inherit, only the four signing secrets are passed", "secrets: inherit" not in rw + dw + vw and all(n in w for w in (rw, dw) for n in tuple("ANDROID_RELEASE_%s: ${{ secrets.ANDROID_RELEASE_%s }}" % (n, n) for n in ("KEYSTORE_BASE64", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD"))))
 check("workflow: validate build passes no secrets", "secrets:" not in vw.split("uses: ./.github/workflows/build-all.yml")[1])
 check("workflow: release artifact name defined once and used by upload and download", rw.count("RELEASE_ASSETS") == 3 and "coordinated-release-assets-b" in rw and rw.count("coordinated-release-assets-b") == 1)
 
