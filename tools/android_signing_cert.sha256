@@ -1,2 +1,3 @@
-# SHA-256 of the persistent Android signing certificate (public). Written by tools/android_keystore_setup.sh.
-# While empty, release builds still sign with the secret key but the signer is not pinned.
+# SHA-256 of the persistent Android signing certificate (public; the owner-created keystore behind the ANDROID_RELEASE_* secrets).
+# Release builds refuse to run unless the APK is signed with exactly this certificate.
+14:07:6D:60:A6:FC:9F:07:A7:3D:8F:3A:1C:C1:1B:88:AE:27:2D:57:1C:B0:F0:64:28:5C:00:D4:EE:EA:37:26
