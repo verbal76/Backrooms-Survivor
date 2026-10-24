@@ -52,6 +52,13 @@ for bad in ("godot/scripts/android", "godot/scripts/windows", "godot/scripts/lin
     if os.path.exists(os.path.join(root, bad)):
         errs.append(f"platform-forked code path is not allowed: {bad}")
 
+# Android signing pin: syntax is validated on every PR (an empty pin is allowed until the owner creates the key; release builds require it)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+import android_signing
+_d, _e = android_signing.read_pin()
+if _e:
+    errs.append(_e)
+
 if errs:
     print("POLICY CHECK FAILED:")
     for e in errs: print("  -", e)

@@ -38,6 +38,20 @@ func muzzle_offset_px(_wep: Dictionary) -> float:
 	return GUN_GRIP_FWD + (1.0 - SPRITE_BACK) * TARGET_LEN
 
 
+var _flip := 1.0                  # which side of the hand the weapon is drawn on (see _draw)
+
+
+## Which side (+1 / -1) the weapon sprite is mirrored to, from the FACING angle only, with a dead band around vertical
+## so it never flickers while the facing crosses straight up / down. `prev` is returned inside the dead band.
+static func flip_side(facing: float, prev: float) -> float:
+	var c := cos(facing)
+	if c < -0.12:
+		return -1.0
+	if c > 0.12:
+		return 1.0
+	return prev
+
+
 func _draw() -> void:
 	if wp == null or wp.game == null or wp.game.player == null:
 		return
@@ -71,7 +85,11 @@ func _draw() -> void:
 	var draw_angle := wep_angle + (recoil * -0.05 if not melee else 0.0)
 	if tex:
 		var sc := TARGET_LEN / float(tex.get_width()) * (1.0 + pop * 0.25)
-		var flip := -1.0 if cos(wep_angle) < 0.0 else 1.0   # never draw the gun upside down
+		# Never draw the weapon upside down. The side is chosen from the FACING (body) angle with a dead band, never from the
+		# animated swing angle: a melee swing sweeps +-45 degrees, so using it made the blade mirror itself in the middle
+		# of every swing whenever the player faced roughly up or down.
+		_flip = flip_side(a, _flip)
+		var flip := _flip
 		# Mirror (so the gun is never upside down) with a -1 y scale about the grip. A negative rect height
 		# instead makes draw_texture_rect shift the sprite by its full height (weapon "levitating" off the hand).
 		var tw: float = tex.get_width() * sc

@@ -52,7 +52,7 @@ while `game.state == "playing"`), `reset_run()` (new run: clear all entities/sta
 - `game.chunk_spawned(cx, cy)` signal: emitted when a new map chunk is generated (item/prop/enemy spawning hook).
 
 ### Input (`game.input`)
-`move: Vector2`, `aim_world: Vector2` (world px), `fire`, `alt_fire`, `sprint`, `just("action")` edge presses:
+`move: Vector2`, `aim_world: Vector2` (world px; touch and gamepad: always the automatic-targeting facing), `fire`, `alt_fire`, `sprint`, `just("action")` edge presses:
 `use_water use_bandage use_food bomb weapon_next weapon_prev headlamp battery pause interact ui_left ui_right ui_up ui_down ui_accept ui_back status_hud`.
 
 ### Juice (`game.fx`, never null)

@@ -6,6 +6,7 @@ var _blob: GradientTexture2D
 
 
 func _on_bound() -> void:
+	design_min = Vector2(720, 440)        # phone landscape: ~1.6x (the 12-row menu scrolls)
 	_blob = GradientTexture2D.new()
 	var g := Gradient.new()
 	g.set_color(0, Color(1.0, 0.85, 0.35, 0.22))
@@ -25,8 +26,6 @@ func _on_bound() -> void:
 	menu.add_slider("Music", func(): return o.music_volume, func(v): o.music_volume = v)
 	menu.add_slider("Enemy Sounds", func(): return o.sfx_volume, func(v): o.sfx_volume = v)
 	menu.add_slider("Headlamp", func(): return o.headlamp_brightness, func(v): o.headlamp_brightness = v, 0.1, 1.0)
-	var aim := menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
-	aim["enabled"] = func(): return ui.difficulty < 3
 	menu.add_button("[ START GAME ]", func(): ui.start_game())
 	var up := menu.add_button("", _open_shop)
 	up["label_fn"] = func(): return "[ UPGRADES ]  (%d Tokens)" % ui.progression.profile(ui.difficulty).tokens
@@ -35,7 +34,7 @@ func _on_bound() -> void:
 	menu.add_button("[ HOW TO PLAY ]", func(): ui.show_screen("howto", "title"))
 	menu.add_button("[ OPTIONS ]", func(): ui.show_screen("options", "title"))
 	menu.add_button("[ EXIT ]", func(): get_tree().quit(), Color(1, 0.4, 0.3))
-	menu.sel = 6
+	menu.sel = 5
 
 
 func _change_difficulty(d: int) -> void:
@@ -58,19 +57,7 @@ func _version_line() -> String:
 	return _ver_line
 
 
-func _aim_text() -> String:
-	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
 
-
-func _aim_color() -> Color:
-	if ui.difficulty >= 3:
-		return Color(0.6, 0.6, 0.6)
-	return Color(0.3, 1, 0.3) if ui.options.aim_assist else Color(1, 0.3, 0.3)
-
-
-func _toggle_aim(_d: int) -> void:
-	if ui.difficulty < 3:
-		ui.options.aim_assist = not ui.options.aim_assist
 
 
 func _open_shop() -> void:
@@ -141,7 +128,8 @@ func _draw() -> void:
 	var s_alpha := clampf(age / 0.5, 0.0, 1.0)
 	var compact := h < 560.0
 	var title_h := 112.0 if compact else 142.0
-	menu.max_rows = menu.rows_for(h - title_h - 56.0)
+	menu.compact = h < 460.0
+	menu.max_rows = menu.rows_for(h - title_h - (74.0 if compact else 56.0))
 	var total := title_h + menu.total_height()
 	var top := maxf(8.0, floorf((h - total) * 0.5))
 	var cx := w * 0.5
@@ -169,8 +157,8 @@ func _draw() -> void:
 	menu.draw(self, cx, top + title_h, dt, t)
 
 	var hint: String = ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ENTER confirm",
-		"D-Pad select    Left/Right adjust    A confirm    Menu start", "TAP to select    DRAG sliders")
-	UITheme.text(self, hint, 0, h - 40, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
-	UITheme.text(self, _version_line(), 0, h - 20, 10, Color(0.4, 0.4, 0.34, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
+		"D-Pad select    Left/Right adjust    A confirm    Menu start", "TAP to select    DRAG sliders / scroll")
+	UITheme.text(self, hint, 0, h - 40, 14 if compact else 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, _version_line(), 0, h - 20, 11 if compact else 10, Color(0.4, 0.4, 0.34, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.scanlines(self, size, Color(0, 0, 0, 0.12), 3.0)
 	UITheme.vignette(self, size, 0.55)

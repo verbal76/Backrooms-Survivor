@@ -20,3 +20,37 @@ same source SHA (`release_manifest.json`).
 Rules: no platform-named code directories or branches; no `if platform:` gameplay or balance differences; any new
 difference must be added to this table in the same change. Legacy LÖVE2D files in the repo root are the reference
 implementation of the same game and are not a platform target.
+
+## Android layout pass (Build 15 playtest feedback)
+- Stat bars hug the left edge: the HUD uses at most 20 logical px of the left display-cutout inset (buttons still use the full inset).
+- Touch minimap is a toggle: the MAP button sits left of ATTACK (well clear of it); default hidden, state saved in options (`minimap_on`).
+  Keyboard / gamepad keep the always-on minimap.
+- Utility buttons (BOMB, WPN, LAMP, BAT) sit on an arc around ATTACK with >= 8 px gaps (checked at 5 viewports, both hands).
+- Needs physical-device verification (cutout shape on the owner's phone, thumb reach).
+
+## Android phone UI scale (owner playtest of Build 13)
+On a real mobile device the whole UI is drawn about **2x** larger (`ui.phone_boost()`: 2.0 on phones, easing to 1.25 on tablets by
+physical screen size; desktop, Windows, Linux and Steam Deck keep boost 1.0, enforced by a regression test). It multiplies Options >
+UI Scale and is capped so each page still fits. What changed on phones only:
+- **HUD:** stats panel top-left, info panel top-right, minimap in the strip between them (left-handed play mirrors the panels); the
+  minimap is bigger with larger markers; counters and captions on the touch buttons ~40% larger. The touch sticks keep their size.
+- **Level-up:** larger cards, titles and descriptions, a lighter unselected card, both cards always fully visible.
+- **Tip cards:** larger text, placed between the two thumb clusters so they never cover a stick or button.
+- **Pause, Options, How To Play, Death, Title:** compact 2x layouts (tighter header, scrolling lists, drag-to-scroll).
+- Not changed (still ~1.4x, screens too dense for a 360 px tall canvas): Upgrades shop, character select, name entry.
+Evidence: `docs/android_ui_before_after/` (same seed and game state, 1280x580). Tests: `t_phone_ui`, `t_phone_menus` in
+`godot/tools/regression_tests.gd` check the scale, on-screen bounds and overlap with every touch control at five phone sizes.
+
+## Automatic targeting and attack input (release-candidate pass)
+- **Facing authority:** for touch and gamepad the combat facing is decided in ONE place, `GameInput._update_auto_facing()`: face the nearest
+  living enemy within 10 tiles that has a clear tile-grid line of sight (`has_clear_los`, exact traversal of the real level collision; the
+  shooter's and the target's own tiles never count); no target -> face the way you walk; standing still -> keep the last facing. It writes
+  `aim_world`, the player turns to it instantly (`snap_facing`), and the body sprite, held weapon, swing / bullet direction and hit test all read
+  `player.angle`. The movement stick never steers the facing while a target exists. Walls, range and corners behave as in
+  `tools/regression_tests.gd` tests A-J.
+- **No manual aim:** there is no right aim joystick on touch, the gamepad right stick is menu-only, and the Aim Assist option is gone.
+  Keyboard + mouse keeps cursor aim (it has no stick to take over); that is the only manual aim left and is an owner decision to keep or remove.
+- **ATTACK input:** every press is latched and buffered for 0.16 s (`FIRE_BUFFER`); `weapons.gd` consumes it when an attack really starts, so
+  short taps, taps during hit-stop and taps just before the cooldown ends register, while the weapon cooldown, stamina cost and damage are untouched.
+- **Weapon mirroring:** the side the weapon is drawn on follows the facing (with a dead band at vertical), never the animated swing angle.
+- **HUD:** compact stats / combat panels (about 50% / 45% smaller), notifications drawn below the character.

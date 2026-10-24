@@ -102,6 +102,7 @@ func _physics_process(delta: float) -> void:
 		day = 1 + int(run_time / day_seconds)
 		var light: float = lighting.light_level_at_player() if lighting and lighting.has_method("light_level_at_player") else 0.3
 		var in_aim := input.aim_world if input else get_global_mouse_position()
+		player.snap_facing = input != null and input.facing_snap
 		player.step(delta, input.move if input else Vector2.ZERO, input.sprint if input else false,
 			in_aim, input.fire if input else false, light)
 		_apply_live_mods()

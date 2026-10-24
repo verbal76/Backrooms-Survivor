@@ -25,6 +25,7 @@ var _back_rect := Rect2()
 
 
 func _on_bound() -> void:
+	design_min = Vector2(640, 340)         # phone landscape at 2x: the page lays out in ~800 x 360
 	var o: GameOptions = ui.options
 	var pct := func(v: float) -> String: return "%d%%" % int(round(v * 100.0))
 	menu.row_h = 38.0
@@ -62,8 +63,6 @@ func _on_bound() -> void:
 	rs["fmt"] = pct
 	var dz := pad_menu.add_slider("Stick Dead Zone", func(): return o.pad_deadzone, func(v): o.pad_deadzone = v, 0.05, 0.4, 0.05)
 	dz["fmt"] = pct
-	var aim := pad_menu.add_choice("Aim Assist", _aim_text, _toggle_aim, _aim_color)
-	aim["enabled"] = func(): return ui.difficulty < 3
 	pad_menu.add_choice("Button Prompts", func(): return GameOptions.PROMPT_STYLES[clampi(o.prompt_style, 0, GameOptions.PROMPT_STYLES.size() - 1)], func(d): o.prompt_style = posmod(o.prompt_style + d, GameOptions.PROMPT_STYLES.size()))
 	pad_menu.add_toggle("System Keyboard", func(): return o.steam_keyboard, func(_d): o.steam_keyboard = not o.steam_keyboard)
 	pad_menu.add_button("[ BUTTON LAYOUT ]", func(): _open_section("controls"))
@@ -107,19 +106,7 @@ func _set_rumble_strength(v: float) -> void:
 	ui.input.rumble("kill")
 
 
-func _aim_text() -> String:
-	return "LOCKED" if ui.difficulty >= 3 else ("ON" if ui.options.aim_assist else "OFF")
 
-
-func _aim_color() -> Color:
-	if ui.difficulty >= 3:
-		return Color(0.6, 0.6, 0.6)
-	return Color(0.3, 1, 0.3) if ui.options.aim_assist else Color(1, 0.3, 0.3)
-
-
-func _toggle_aim(_d: int) -> void:
-	if ui.difficulty < 3:
-		ui.options.aim_assist = not ui.options.aim_assist
 
 
 func _cycle_quality(d: int) -> void:
@@ -374,16 +361,19 @@ func _draw() -> void:
 			_draw_touch(w, h, a)
 		_:
 			var m := _menu_for(section)
-			m.max_rows = m.rows_for(h - 150.0)
+			var compact := h < 460.0
+			m.compact = compact
+			var head_h := 50.0 if compact else 0.0
+			m.max_rows = m.rows_for(h - (head_h + 34.0 if compact else 150.0))
 			var total := m.total_height()
-			var top := floorf((h - total) * 0.5) + 14.0
+			var top := head_h if compact else floorf((h - total) * 0.5) + 14.0
 			var title: String = {"main": "OPTIONS", "display": "DISPLAY & PERFORMANCE", "gamepad": "CONTROLLER"}.get(section, "OPTIONS")
-			UITheme.head(self, title, 0, maxf(10.0, top - 62) - (1.0 - a) * 12, 40, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+			UITheme.head(self, title, 0, 6.0 if compact else maxf(10.0, top - 62) - (1.0 - a) * 12, 30 if compact else 40, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 			m.draw(self, w * 0.5, top, dt, ui.clock)
 			UITheme.text(self, ui.input.hint("UP/DOWN select    LEFT/RIGHT adjust    ESC back", "D-Pad select    Left/Right adjust    A confirm    B back",
-				"TAP a row    tap the sides to adjust"), 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+				"TAP a row    tap the sides to adjust" + ("    drag to scroll" if m.max_rows < m.items.size() else "")), 0, h - (22 if compact else 26), 14 if compact else 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 	if _msg != "":
-		UITheme.text(self, _msg, 0, h - 52, 15, Color(1, 0.9, 0.4, clampf(_msg_t, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, w)
+		UITheme.text(self, _msg, 0, h - (46 if h < 460.0 else 52), 15, Color(1, 0.9, 0.4, clampf(_msg_t, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, w)
 	UITheme.vignette(self, size, 0.4)
 
 
@@ -397,10 +387,11 @@ func _binding_text(id: String) -> String:
 
 func _draw_controls(w: float, h: float, a: float) -> void:
 	var inp: GameInput = ui.input
-	UITheme.head(self, "CONTROLS", 0, 12, 36, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var compact := h < 460.0
+	UITheme.head(self, "CONTROLS", 0, 6 if compact else 12, 28 if compact else 36, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	var row_h := 28.0
-	var top := 62.0
-	var vis := maxi(4, int((h - top - 70.0) / row_h))
+	var top := 44.0 if compact else 62.0
+	var vis := maxi(4, int((h - top - (34.0 if compact else 70.0)) / row_h))
 	if csel < cscroll:
 		cscroll = csel
 	if csel >= cscroll + vis:
@@ -459,21 +450,24 @@ func _draw_controls(w: float, h: float, a: float) -> void:
 	if inp.capturing():
 		hint = inp.hint("Waiting for input...  Esc cancels.  If a key is already used the two actions swap.",
 			"Press the new button...  Menu cancels.  If a button is already used the two actions swap.")
-	UITheme.text(self, hint, 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, hint, 0, h - (22 if compact else 26), 14 if compact else 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
 
 
 func _draw_touch(w: float, h: float, a: float) -> void:
-	UITheme.head(self, "TOUCH CONTROLS", 0, 14, 36, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	var compact := h < 460.0
+	touch_menu.compact = compact
+	var mtop := 44.0 if compact else 66.0
+	UITheme.head(self, "TOUCH CONTROLS", 0, 6 if compact else 14, 28 if compact else 36, Color(0.9, 0.8, 0.2, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	var total := touch_menu.total_height()
-	touch_menu.draw(self, w * 0.5, 66.0, dt, ui.clock)
+	touch_menu.draw(self, w * 0.5, mtop, dt, ui.clock)
 	# live preview of the layout (landscape phone outline)
 	var pw := minf(w - 80.0, 560.0)
 	var ph := pw * 0.46
-	var avail := h - (66.0 + total) - 50.0
+	var avail := h - (mtop + total) - (36.0 if compact else 50.0)
 	if ph > avail:
 		ph = maxf(80.0, avail)
 		pw = ph / 0.46
-	var pr := Rect2((w - pw) * 0.5, 66.0 + total + 10.0, pw, ph)
+	var pr := Rect2((w - pw) * 0.5, mtop + total + 8.0, pw, ph)
 	UITheme.panel(self, pr, Color(0.02, 0.02, 0.015, 0.95), Color(0.9, 0.8, 0.2, 0.5), 10, 2)
 	var vsize := Vector2(1600.0, 720.0) if pr.size.x / pr.size.y > 2.0 else Vector2(960.0, 720.0)
 	vsize = Vector2(pr.size.x / pr.size.y * 720.0, 720.0)
@@ -482,7 +476,7 @@ func _draw_touch(w: float, h: float, a: float) -> void:
 	var op: float = ui.options.touch_opacity
 	var f := op / 0.6
 	var font := UITheme.title_font()
-	for key in ["move_c", "aim_c"]:
+	for key in ["move_c"]:
 		var c: Vector2 = pr.position + lay[key] * sc
 		var col := Color(1, 1, 1) if key == "move_c" else Color(1, 0.3, 0.2)
 		draw_circle(c, lay.stick_r * sc, Color(col, minf(1.0, 0.16 * f)))
@@ -499,4 +493,4 @@ func _draw_touch(w: float, h: float, a: float) -> void:
 			tw = font.get_string_size(b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		draw_string(font, c2 + Vector2(-tw * 0.5, fs * 0.33), b.label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, minf(1.0, 0.95 * f)))
 	UITheme.text(self, "PREVIEW", pr.position.x + 8, pr.position.y + 4, 12, Color(0.7, 0.7, 0.6, 0.8))
-	UITheme.text(self, "Sticks float inside their half of the screen. Keep thumbs inside the safe area.", 0, h - 26, 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)
+	UITheme.text(self, "Sticks float inside their half of the screen. Keep thumbs inside the safe area.", 0, h - (22 if compact else 26), 14 if compact else 13, UITheme.HINT, HORIZONTAL_ALIGNMENT_CENTER, w)

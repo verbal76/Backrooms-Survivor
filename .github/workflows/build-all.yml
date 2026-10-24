@@ -42,6 +42,19 @@ on:
         required: false
         type: boolean
         default: true
+    secrets:
+      ANDROID_RELEASE_KEYSTORE_BASE64:
+        description: Base64 of the persistent Android signing keystore. See docs/ANDROID_SIGNING.md
+        required: false
+      ANDROID_RELEASE_KEYSTORE_PASSWORD:
+        description: Store password of that keystore
+        required: false
+      ANDROID_RELEASE_KEY_ALIAS:
+        description: Alias of the signing key inside the keystore
+        required: false
+      ANDROID_RELEASE_KEY_PASSWORD:
+        description: Password of that key (may equal the store password; optional)
+        required: false
     outputs:
       sha:
         description: The approved source SHA all artifacts were built from
@@ -178,6 +191,7 @@ jobs:
       - name: Export patch pack + manifest
         working-directory: godot
         run: |
+          mkdir -p build/out        # platform=android alone skips the Windows/Linux steps that used to create it
           godot --headless --export-pack "Patch" build/out/patch.pck
           SIZE=$(stat -c%s build/out/patch.pck)
           SHA=$(sha256sum build/out/patch.pck | cut -d' ' -f1)
@@ -190,7 +204,19 @@ jobs:
       - name: Export Android (debug)
         if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
         working-directory: godot
+        env:
+          KS_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
+          # The godot-ci image has no python3 (tools/android_signing.py needs it); curl/unzip are installed the same way below.
+          command -v python3 >/dev/null || (apt-get update -qq && apt-get install -y -qq python3)
+          # Release fails closed BEFORE any download: a valid pinned certificate and the persistent-key secrets are mandatory.
+          if [ "${{ inputs.mode }}" = "release" ]; then
+            python3 ../tools/android_signing.py check-pin --require
+            [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ] || { echo "::error::ANDROID_RELEASE_KEYSTORE_BASE64 / _KEYSTORE_PASSWORD / _KEY_ALIAS secrets are missing: a release build must use the persistent signing key (docs/ANDROID_SIGNING.md)"; exit 1; }
+          fi
           # Godot 4.3 needs cmdline-tools, platform-tools, build-tools 34.0.0 and platform android-34.
           # The image's bundled SDK is incomplete, so install a fresh one.
           command -v curl >/dev/null && command -v unzip >/dev/null || (apt-get update -qq && apt-get install -y -qq curl unzip)
@@ -204,28 +230,37 @@ jobs:
           ls "$SDK" "$SDK/build-tools" "$SDK/platforms"
           JH="${JAVA_HOME:-$(dirname "$(dirname "$(readlink -f "$(which javac)")")")}"
           echo "Android SDK: $SDK   JDK: $JH"
-          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
-            -keystore "$HOME/debug.keystore" -storepass android \
-            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
-          mkdir -p ~/.config/godot
-          cat > ~/.config/godot/editor_settings-4.3.tres <<EOF
-          [gd_resource type="EditorSettings" format=3]
-
-          [resource]
-          export/android/android_sdk_path = "$SDK"
-          export/android/java_sdk_path = "$JH"
-          export/android/debug_keystore = "$HOME/debug.keystore"
-          export/android/debug_keystore_user = "androiddebugkey"
-          export/android/debug_keystore_pass = "android"
-          EOF
+          # Signing identity: ONE persistent keystore (repo secrets) so every APK updates the previous one in place.
+          # validate mode without the secrets (PR checks, forks) uses a throw-away key and says so. Nothing below prints the password.
+          KS="$RUNNER_TEMP/android-signing.keystore"
+          SETTINGS="$HOME/.config/godot/editor_settings-4.3.tres"
+          cleanup() { rm -f "$KS" "$SETTINGS"; }
+          trap cleanup EXIT
+          EXPECT=""
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ]; then
+            EXPECT="$(python3 ../tools/android_signing.py prepare --keystore "$KS")"
+            echo "Signing with the persistent keystore (alias $KS_ALIAS), certificate $EXPECT"
+          else
+            [ "${{ inputs.mode }}" != "release" ] || { echo "::error::incomplete signing secrets in a release build"; exit 1; }
+            KS_PASS="$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"; export KS_PASS; KS_ALIAS=androiddebugkey
+            echo "::warning::validate build signed with a THROW-AWAY key; this APK is not installable over a release APK"
+            keytool -keyalg RSA -genkeypair -alias "$KS_ALIAS" -keypass:env KS_PASS \
+              -keystore "$KS" -storepass:env KS_PASS \
+              -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          fi
+          python3 ../tools/android_signing.py settings --out "$SETTINGS" --sdk "$SDK" --jdk "$JH" --keystore "$KS" --alias "$KS_ALIAS"
+          APKSIGNER="$(python3 ../tools/android_signing.py find-apksigner "$SDK")"
           sed -i "s/^version\/code=.*/version\/code=${{ inputs.build_number || github.run_number }}/" export_presets.cfg
           mkdir -p build/android
+          rm -f build/android/BackroomsSurvivor-dev.apk        # a stale file can never satisfy the checks below
           ls ~/.local/share/godot/export_templates/4.3.stable | grep -i android || echo "NO android templates"
-          ls "$JH/bin" | tr '\n' ' '; echo
-          cat ~/.config/godot/editor_settings-4.3.tres
-          godot --headless --verbose --export-debug "Android Dev" build/android/BackroomsSurvivor-dev.apk 2>&1 | tee /tmp/android-export.log | tail -40 || true
-          grep -in "valid\|missing\|not found\|error" /tmp/android-export.log | head -40 || true
-          test -f build/android/BackroomsSurvivor-dev.apk
+          # The export must succeed: no `|| true`, and pipefail (bash) makes the pipeline fail with godot, not with tee.
+          set -o pipefail
+          godot --headless --verbose --export-debug "Android Dev" build/android/BackroomsSurvivor-dev.apk 2>&1 | tee /tmp/android-export.log | tail -40
+          grep -in "valid\|missing\|not found\|error" /tmp/android-export.log | head -40 || true     # diagnostics only (grep status is irrelevant)
+          # Signature check of the APK that was just produced: it must verify, carry the keystore's certificate (Godot really used
+          # the configured key) and, in release mode, the pinned certificate.
+          python3 ../tools/android_signing.py verify build/android/BackroomsSurvivor-dev.apk --apksigner "$APKSIGNER" --mode "${{ inputs.mode }}" ${EXPECT:+--expect-cert "$EXPECT"}
           cp build/android/BackroomsSurvivor-dev.apk build/out/
 
       - name: Write release manifest (build provenance)

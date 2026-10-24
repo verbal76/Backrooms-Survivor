@@ -26,7 +26,7 @@ var control_mode := 0              # index in CONTROL_MODES
 var prompt_style := 0              # index in PROMPT_STYLES (controller button art); additive, absent in old saves = Auto
 var res_index := 2
 var fullscreen := false
-var aim_assist := true
+var aim_assist := true             # legacy (manual-aim era): still saved/loaded so old options.json files stay valid, no longer used
 var difficulty := 1                # 1..4 (last selected)
 var last_character := ""
 # controls (see GameInput.ACTIONS for the action ids). Only rebound entries are stored; the rest use defaults.
@@ -36,6 +36,7 @@ var pad_binds := {}                # action -> joypad code (JoyButton, or 100 = 
 var touch_size := 1.0              # 0.6 .. 1.5
 var touch_opacity := 0.6           # 0.2 .. 1.0
 var touch_left_handed := false     # mirror the layout
+var minimap_on := false            # touch: the MAP button shows / hides the minimap (default hidden, remembered)
 var haptics := true                # vibrate on hits / damage (Android)
 var tips_enabled := true           # context tips (tutorial)
 # display / performance (Steam Deck friendly defaults are applied in apply_platform_defaults())
@@ -107,7 +108,7 @@ func to_dict() -> Dictionary:
 		"headlamp_brightness": headlamp_brightness, "control_mode": control_mode, "res_index": res_index,
 		"fullscreen": fullscreen, "aim_assist": aim_assist, "difficulty": difficulty,
 		"last_character": last_character, "key_binds": key_binds, "pad_binds": pad_binds,
-		"touch_size": touch_size, "touch_opacity": touch_opacity, "touch_left_handed": touch_left_handed,
+		"touch_size": touch_size, "touch_opacity": touch_opacity, "touch_left_handed": touch_left_handed, "minimap_on": minimap_on,
 		"haptics": haptics, "tips_enabled": tips_enabled, "ui_scale": ui_scale, "high_contrast": high_contrast,
 		"vsync": vsync, "fps_cap_index": fps_cap_index, "quality": quality, "pause_on_focus_loss": pause_on_focus_loss,
 		"rumble": rumble, "rumble_strength": rumble_strength, "pad_deadzone": pad_deadzone,
@@ -145,6 +146,7 @@ func apply_dict(d: Dictionary) -> void:
 	touch_size = clampf(float(d.get("touch_size", touch_size)), 0.6, 1.5)
 	touch_opacity = clampf(float(d.get("touch_opacity", touch_opacity)), 0.2, 1.0)
 	touch_left_handed = bool(d.get("touch_left_handed", touch_left_handed))
+	minimap_on = bool(d.get("minimap_on", minimap_on))
 	prompt_style = clampi(int(d.get("prompt_style", prompt_style)), 0, PROMPT_STYLES.size() - 1)
 	haptics = bool(d.get("haptics", haptics))
 	tips_enabled = bool(d.get("tips_enabled", tips_enabled))
