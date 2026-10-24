@@ -305,6 +305,8 @@ bad_fn = sorted({f for wf in glob.glob(os.path.join(HERE, "..", ".github/workflo
                  for expr in re.findall(r"\$\{\{(.*?)\}\}", open(wf).read())
                  for f in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", expr) if f.lower() not in KNOWN_FN})
 check("workflow: only GitHub-supported expression functions (no substr etc.)", not bad_fn, ", ".join(bad_fn))
+pp = bw[bw.index("Export patch pack"):bw.index("Export Android")]
+check("workflow: patch pack step creates build/out itself (android-only builds skip the earlier steps)", pp.index("mkdir -p build/out") < pp.index("export-pack"))
 check("workflow: release artifact name defined once and used by upload and download", rw.count("RELEASE_ASSETS") == 3 and "coordinated-release-assets-b" in rw and rw.count("coordinated-release-assets-b") == 1)
 
 print("RELEASE TOOLS: " + ("PASSED" if not fails else "FAILED " + ", ".join(fails)))

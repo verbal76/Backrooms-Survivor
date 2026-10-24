@@ -191,6 +191,7 @@ jobs:
       - name: Export patch pack + manifest
         working-directory: godot
         run: |
+          mkdir -p build/out        # platform=android alone skips the Windows/Linux steps that used to create it
           godot --headless --export-pack "Patch" build/out/patch.pck
           SIZE=$(stat -c%s build/out/patch.pck)
           SHA=$(sha256sum build/out/patch.pck | cut -d' ' -f1)
