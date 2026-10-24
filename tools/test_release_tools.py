@@ -299,6 +299,12 @@ check("workflow: keystore validated before export and removed after", exp.index(
 check("workflow: signing settings file is never printed", "cat ~/.config/godot/editor_settings" not in exp)
 check("workflow: no secrets: inherit, only the four signing secrets are passed", "secrets: inherit" not in rw + dw + vw and all(n in w for w in (rw, dw) for n in tuple("ANDROID_RELEASE_%s: ${{ secrets.ANDROID_RELEASE_%s }}" % (n, n) for n in ("KEYSTORE_BASE64", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD"))))
 check("workflow: validate build passes no secrets", "secrets:" not in vw.split("uses: ./.github/workflows/build-all.yml")[1])
+import glob
+KNOWN_FN = {"contains", "startswith", "endswith", "format", "join", "tojson", "fromjson", "hashfiles", "success", "failure", "always", "cancelled"}
+bad_fn = sorted({f for wf in glob.glob(os.path.join(HERE, "..", ".github/workflows/*.yml"))
+                 for expr in re.findall(r"\$\{\{(.*?)\}\}", open(wf).read())
+                 for f in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", expr) if f.lower() not in KNOWN_FN})
+check("workflow: only GitHub-supported expression functions (no substr etc.)", not bad_fn, ", ".join(bad_fn))
 check("workflow: release artifact name defined once and used by upload and download", rw.count("RELEASE_ASSETS") == 3 and "coordinated-release-assets-b" in rw and rw.count("coordinated-release-assets-b") == 1)
 
 print("RELEASE TOOLS: " + ("PASSED" if not fails else "FAILED " + ", ".join(fails)))

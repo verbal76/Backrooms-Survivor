@@ -35,7 +35,7 @@ permissions:
 
 env:
   # ONE definition of the private/public asset artifact name (build number + source SHA, both validated by the gate).
-  RELEASE_ASSETS: coordinated-release-assets-b${{ inputs.build_number }}-${{ substr(inputs.source_sha, 0, 7) }}
+  RELEASE_ASSETS: coordinated-release-assets-b${{ inputs.build_number }}-${{ inputs.source_sha }}
 
 concurrency:
   group: build-sequence
