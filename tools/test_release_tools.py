@@ -294,6 +294,7 @@ bw, rw, dw, vw = W("build-all.yml"), W("release-build.yml"), W("dev-build.yml"),
 exp = bw[bw.index("Export Android"):bw.index("Write release manifest")]
 check("workflow: Godot Android export is not success-masked", not re.search(r"godot[^\n]*export-debug[^\n]*\|\|\s*true", exp) and "pipefail" in exp)
 check("workflow: stale APK removed before export, verify runs on the fresh APK", exp.index("rm -f build/android/BackroomsSurvivor-dev.apk") < exp.index("export-debug") < exp.index("android_signing.py verify"))
+check("workflow: python3 is ensured before the first android_signing.py call (godot-ci image lacks it)", exp.index("apt-get install -y -qq python3") < exp.index("android_signing.py"))
 check("workflow: release requires pin + secrets before any SDK download", exp.index("check-pin --require") < exp.index("sdkmanager"))
 check("workflow: keystore validated before export and removed after", exp.index("android_signing.py prepare") < exp.index("export-debug") and "trap cleanup EXIT" in exp)
 check("workflow: signing settings file is never printed", "cat ~/.config/godot/editor_settings" not in exp)

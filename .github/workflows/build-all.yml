@@ -210,6 +210,8 @@ jobs:
           KS_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
         run: |
+          # The godot-ci image has no python3 (tools/android_signing.py needs it); curl/unzip are installed the same way below.
+          command -v python3 >/dev/null || (apt-get update -qq && apt-get install -y -qq python3)
           # Release fails closed BEFORE any download: a valid pinned certificate and the persistent-key secrets are mandatory.
           if [ "${{ inputs.mode }}" = "release" ]; then
             python3 ../tools/android_signing.py check-pin --require
